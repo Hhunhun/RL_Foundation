@@ -1,0 +1,14 @@
+# IDE 配置
+.idea/
+.vscode/
+
+# Python & 环境编译产物
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# 强化学习训练产出物 (避免将几百MB的模型推送到 Git)
+outputs/

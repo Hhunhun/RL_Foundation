@@ -1,0 +1,4 @@
+torch>=2.0.0
+gymnasium==0.29.1
+numpy>=1.24.0
+pygame-ce>=2.3.0  # <-- 替换为社区版，彻底解决 NumPy 类型冲突
