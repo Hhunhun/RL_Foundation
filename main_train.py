@@ -56,6 +56,9 @@ def main():
                 # 将 Loss 数据推送到 TensorBoard (每步记录)
                 logger.log_scalar("Loss/Critic", loss_dict["critic_loss"], total_steps)
                 logger.log_scalar("Loss/Actor", loss_dict["actor_loss"], total_steps)
+                # 新增：推送到 TensorBoard 以监控自适应温度系统
+                logger.log_scalar("Loss/Alpha", loss_dict["alpha_loss"], total_steps)
+                logger.log_scalar("Metrics/Alpha_Value", loss_dict["alpha"], total_steps)
 
             if terminated or truncated:
                 break

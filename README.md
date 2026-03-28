@@ -9,6 +9,7 @@
     * Actor：高斯分布策略 + 重参数化技巧 + $\tanh$ 雅可比行列式修正。
     * Critic：双 Q 网络防高估 + 平滑软更新 (Soft Update) + 自动熵调整 (Alpha Tuning - 待接入)。
 * **科学的可视化诊断**: 原生集成 TensorBoard，实时监控 Reward、Loss 及网络参数分布。
+* **极客级纯净渲染**: 摒弃不稳定的底层依赖，针对基准测试独立重写了基于 Matplotlib 的高性能物理渲染流水线。
 
 ## 📂 项目架构
 ├── algorithms/     # 核心算法库 (目前包含 SAC)
@@ -28,3 +29,6 @@ python main_train.py
 
 # 3. 查看实时训练曲线
 tensorboard --logdir=outputs/logs
+
+# 4. 加载训练好的大脑，开启高性能可视化物理渲染
+python test_render.py

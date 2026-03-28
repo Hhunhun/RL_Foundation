@@ -4,7 +4,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 class Logger:
-    def __init__(self, log_dir="output/logs", env_name="Unknown"):
+    def __init__(self, log_dir="outputs/logs", env_name="Unknown"): # 修复：统一为复数 outputs/
         # 利用当前时间戳生成唯一的运行名称，防止不同实验的数据混在一起
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.run_dir = os.path.join(log_dir, f"{env_name}_SAC_{timestamp}")

@@ -69,7 +69,11 @@ class Actor(nn.Module):
         self.apply(weights_init_)
 
         # 动作缩放比例 (将 tanh 的 [-1, 1] 映射到环境真实边界)
-        self.action_scale = torch.tensor(action_scale)
+        # 修改前：
+        # self.action_scale = torch.tensor(action_scale)
+        # 修改后：
+        self.register_buffer('action_scale', torch.tensor(action_scale, dtype=torch.float32))
+
         # 限制 log_std 的范围，防止计算出极其夸张的方差导致 NaN
         self.LOG_STD_MAX = 2.0
         self.LOG_STD_MIN = -20.0
