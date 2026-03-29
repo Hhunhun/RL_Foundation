@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-# 从我们刚才写的基建中引入契约和网络
+# 从我们刚才写的base中引入契约和网络
 from core.base_agent import BaseAgent
 from algorithms.sac.sac_nets import Actor, Critic
 
@@ -33,7 +33,7 @@ class SACAgent(BaseAgent):
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr)
 
         # ----------------------------------------------------
-        # [修改点2] 新增：自适应温度系数 (Auto-Alpha) 基建
+        # [修改点2] 新增：自适应温度系数 (Auto-Alpha)
         # ----------------------------------------------------
         # 目标熵通常设定为 -dim(A)，表示我们期望策略保留的最少随机性
         if target_entropy is None:
@@ -150,7 +150,7 @@ class SACAgent(BaseAgent):
             'critic_target_state_dict': self.critic_target.state_dict(),
             'log_alpha': self.log_alpha  # [修改点8] 把 alpha 状态也保存下来
         }, path)
-        print(f"✅ 模型已成功保存至: {path}")
+        print(f"模型已成功保存至: {path}")
 
     def load_model(self, path: str):
         """加载模型权重"""
@@ -164,4 +164,4 @@ class SACAgent(BaseAgent):
             with torch.no_grad():
                 self.log_alpha.copy_(checkpoint['log_alpha'])
 
-        print(f"🔄 模型权重已从 {path} 加载")
+        print(f"模型权重已从 {path} 加载")

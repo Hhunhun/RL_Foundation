@@ -73,15 +73,15 @@ def main():
     # 3. 自动加载最新权重
     try:
         model_path = get_latest_model_path()
-        print(f"🎯 自动定位到最新权重文件: {model_path}")
+        print(f"自动定位到最新权重文件: {model_path}")
         agent.load_model(model_path)
     except Exception as e:
-        print(f"❌ 加载模型失败: {e}")
+        print(f"加载模型失败: {e}")
         return
 
     # 4. 开始验收 (Evaluation)
     episodes = 3  # 我们录制 3 局足以看出性能
-    print(f"\n🎬 摄像机已就绪，开始后台录制 {episodes} 局实战画面...")
+    print(f"\n摄像机已就绪，开始后台录制 {episodes} 局实战画面...")
 
     for ep in range(episodes):
         state, _ = env.reset()
@@ -97,12 +97,12 @@ def main():
             steps += 1
 
             if terminated or truncated:
-                status = "💥 撞车 (Terminated)" if terminated else "🏁 完赛 (Truncated)"
+                status = "撞车 (Terminated)" if terminated else "完赛 (Truncated)"
                 print(f"Episode {ep + 1}: 存活 {steps} 步 | 总回报: {episode_reward:.2f} | 结局: {status}")
                 break
 
     env.close()
-    print(f"\n✅ 验收完毕！实战录像已按规范保存至: {os.path.abspath(video_dir)}")
+    print(f"\n验收完毕！实战录像已按规范保存至: {os.path.abspath(video_dir)}")
 
 
 if __name__ == "__main__":

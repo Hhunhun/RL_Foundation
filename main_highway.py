@@ -31,7 +31,7 @@ def main():
     # ---------------------------------------------------------
     # [架构优化] 动态模型存储路径对齐
     # 提取 logger 自动生成的时间戳文件夹名，在 models 下建立同名镜像目录
-    # 彻底解决模型权重混淆的问题
+    # 解决模型权重混淆的问题
     # ---------------------------------------------------------
     run_name = os.path.basename(os.path.normpath(logger.run_dir))
     model_save_dir = os.path.join("outputs", "models", run_name)
@@ -45,7 +45,7 @@ def main():
     total_steps = 0
     reward_scale = 1.0  # 奖励缩放因子 (保留此接口，若后续发现 Q 值太小，可调至 5.0)
 
-    print("\n🚀 引擎点火，开始自动驾驶训练...")
+    print("\n开始训练...")
 
     for episode in range(max_episodes):
         state, _ = env.reset()
@@ -105,7 +105,7 @@ def main():
 
     env.close()
     logger.close()
-    print("🏁 自动驾驶训练主循环彻底结束！")
+    print("训练主循环结束！")
 
 
 if __name__ == "__main__":
