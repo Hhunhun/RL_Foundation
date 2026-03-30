@@ -9,9 +9,7 @@ from envs.highway_wrapper import create_highway_env
 
 def main():
     env_name = 'highway-v0'
-
-    # 1. 使用我们定制的“环境工厂”实例化 HighwayEnv
-    print("正在初始化 HighwayEnv 并应用降维装甲...")
+    print("正在初始化 HighwayEnv v4.0 (LQR护甲 + 步数驱动版)...")
     env = create_highway_env(env_name)
 
     state_dim = env.observation_space.shape[0]
@@ -20,34 +18,34 @@ def main():
 
     print(f"[{env_name}] State dim: {state_dim} | Action dim: {action_dim} | Max action: {max_action}")
 
-    # 2. 实例化核心组件
+    # 实例化核心组件
     # 扩容经验池：复杂环境需要更多的历史数据来稳定 Critic 的评估
     replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(2e5))
     agent = SACAgent(state_dim, action_dim, action_scale=max_action, lr=3e-4)
-
-    # 实例化日志记录器
     logger = Logger(log_dir="outputs/logs", env_name=env_name)
 
-    # ---------------------------------------------------------
-    # [架构优化] 动态模型存储路径对齐
-    # 提取 logger 自动生成的时间戳文件夹名，在 models 下建立同名镜像目录
-    # 解决模型权重混淆的问题
-    # ---------------------------------------------------------
+    # 动态模型存储路径对齐 (解决模型坟场问题)
     run_name = os.path.basename(os.path.normpath(logger.run_dir))
     model_save_dir = os.path.join("outputs", "models", run_name)
     os.makedirs(model_save_dir, exist_ok=True)
     print(f"📁 本次运行的模型权重将独立保存在: {model_save_dir}")
 
-    # 3. 设定实战级超参数
-    max_episodes = 500  # HighwayEnv 难度较大，需要更多轮次
+    # ---------------------------------------------------------
+    # 🎯 [v4.0 大修] 训练逻辑从“按局数”升级为“按总步数”
+    # 彻底解决早期暴毙(活不过5步)导致的 Actor 训练不充分问题
+    # ---------------------------------------------------------
+    max_steps = 40000  # 核心KPI：强制小车在环境里实打实地活够 4 万步
+    start_steps = 2000  # 缩短随机探索期(前2000步瞎打方向盘积累负面教训)，早点让大脑接管
     batch_size = 256
-    start_steps = 3000  # 延长纯随机探索期，让车辆在初期多撞几次，积累“血的教训”(负面奖励)
-    total_steps = 0
-    reward_scale = 1.0  # 奖励缩放因子 (保留此接口，若后续发现 Q 值太小，可调至 5.0)
 
-    print("\n开始训练...")
+    total_steps = 0  # 全局步数计数器
+    episode = 0  # 局数计数器 (仅用于日志记录和保存检查点)
+    reward_scale = 1.0  # 奖励缩放因子
 
-    for episode in range(max_episodes):
+    print(f"\n🚀 引擎点火，目标 {max_steps} 步，开始自动驾驶魔鬼训练...")
+
+    # 核心循环：以总步数为绝对衡量标准
+    while total_steps < max_steps:
         state, _ = env.reset()
         episode_reward = 0
         episode_steps = 0
@@ -55,15 +53,14 @@ def main():
         while True:
             # 动作选择 (带有预热探索机制)
             if total_steps < start_steps:
-                action = env.action_space.sample()
+                action = env.action_space.sample()  # 纯随机：必然导致早期疯狂冲出草地暴毙
             else:
-                action = agent.select_action(state, evaluate=False)
+                action = agent.select_action(state, evaluate=False)  # 大脑接管：开始求生
 
             # 环境交互
             next_state, reward, terminated, truncated, _ = env.step(action)
 
             # 致命 Bug 防御：只将真实的物理死亡(terminated)视为 done
-            # 如果是因为达到了最大步数而超时(truncated)，未来状态仍然有价值，绝不能截断 Bellman 方程！
             done_bool = float(terminated)
 
             # 存入经验池 (应用 reward_scale)
@@ -78,7 +75,7 @@ def main():
             if replay_buffer.size > batch_size:
                 loss_dict = agent.update(replay_buffer, batch_size)
 
-                # 将高频数据推送到 TensorBoard (每步记录)
+                # 将高频数据推送到 TensorBoard (每步记录，利用 flush 实时落盘)
                 logger.log_scalar("Loss/Critic", loss_dict["critic_loss"], total_steps)
                 logger.log_scalar("Loss/Actor", loss_dict["actor_loss"], total_steps)
                 logger.log_scalar("Loss/Alpha", loss_dict["alpha_loss"], total_steps)
@@ -87,25 +84,28 @@ def main():
             if terminated or truncated:
                 break
 
+        episode += 1
+
         # 记录宏观情景指标 (每局记录)
         logger.log_scalar("Reward/Episode_Reward", episode_reward, episode)
-        logger.log_scalar("Metrics/Episode_Steps", episode_steps, episode)  # 存活时间是极佳的性能指标
+        logger.log_scalar("Metrics/Episode_Steps", episode_steps, episode)
 
+        # 动态日志输出：此时“总步数进度”比“当前局数”重要得多
         print(
-            f"Episode: {episode + 1}/{max_episodes} | 存活步数: {episode_steps} | 总步数: {total_steps} | 回报: {episode_reward:.2f}")
+            f"Episode: {episode} | 存活步数: {episode_steps} | 总步数: {total_steps}/{max_steps} | 回报: {episode_reward:.2f}")
 
-        # 定期保存检查点 (防止中途断电或崩溃)
-        if (episode + 1) % 100 == 0:
-            checkpoint_path = os.path.join(model_save_dir, f"sac_ep{episode+1}.pth")
+        # 定期保存检查点 (每跑完 100 局存一次档)
+        if episode % 100 == 0:
+            checkpoint_path = os.path.join(model_save_dir, f"sac_ep{episode}.pth")
             agent.save_model(checkpoint_path)
 
-    # 最终完整保存
+    # 最终完整保存 (基于总步数达成)
     final_path = os.path.join(model_save_dir, "sac_highway_final.pth")
     agent.save_model(final_path)
 
     env.close()
     logger.close()
-    print("训练主循环结束！")
+    print(f"🏁 {max_steps} 步魔鬼训练彻底结束！所有权重已安全归档至: {model_save_dir}")
 
 
 if __name__ == "__main__":
