@@ -1,12 +1,10 @@
 import gymnasium as gym
-import highway_env  # 必须导入以触发环境注册机制
+import highway_env
 import numpy as np
 
 
 class HighwayFlattenWrapper(gym.ObservationWrapper):
-    """
-    针对 HighwayEnv 矩阵状态的降维包装器。
-    """
+    """[保留原注释] 针对矩阵状态的降维包装器。"""
 
     def __init__(self, env):
         super().__init__(env)
@@ -25,64 +23,71 @@ class HighwayFlattenWrapper(gym.ObservationWrapper):
 
 
 # ----------------------------------------------------
-# 🎯 [专家手术点 1] 新增：动作约束包装器
-# 用于根治连续动作空间下的剧烈摆头(wobbling)和压线
+# 🎯 [v5.0 升级] 工业级 AV Control 包装器
+# 彻底根治“倒车苟活” Bug，并允许包容平滑变道。
 # ----------------------------------------------------
-class HighwayActionWobbleWrapper(gym.Wrapper):
+class HighwayAVControlWrapper(gym.Wrapper):
     """
-    动作约束包装器。
-    拦截 step() 函数，根据动作的大小和变化率(Jerk)在环境奖励上扣除惩罚分。
+    [v5.0] AV Control 包装器。
+    1. LQR 二次型 Jerk 惩罚：防止抖动摆头。
+    2. Velocity Constraint：禁止纵向倒车(vx < 0)和龟速跟车。
     """
 
-    def __init__(self, env, steering_penalty_coeff=0.5):
+    def __init__(self, env, jerk_weight=1.0, reverse_penalty_coeff=5.0):
         super().__init__(env)
-        # 记录上一个动作，用于计算动作变化率 (jerk)
         self.last_action = np.zeros(self.env.action_space.shape)
-        # 惩罚系数：告诉小车打方向盘的力度和抖动幅度扣分有多严重
-        self.steering_penalty_coeff = steering_penalty_coeff
-        print(f"🔧 [Wrapper] 动作约束机制已点火，惩罚系数: {steering_penalty_coeff}")
+        # jerk_weight: 核心惩罚转向变化率 (禁止抖动)
+        self.jerk_weight = jerk_weight
+        # reverse_penalty_coeff: 惩罚倒车的系数 (要重重地惩罚！)
+        self.reverse_penalty_coeff = reverse_penalty_coeff
+        print(
+            f"🔧 [Wrapper v5.0] AV Control 专家套件已部署 | Jerk权重: {jerk_weight} | 倒车惩罚系数: {reverse_penalty_coeff}")
 
     def step(self, action):
-        """
-        拦截动作，计算惩罚，并修改奖励。
-        """
-        # 1. 执行原环境动作
         next_obs, reward, terminated, truncated, info = self.env.step(action)
 
-        # 2. 专家级奖励塑形 (Reward Shaping) - 动作惩罚
-        # action[1] 是连续转向动作 [-1, 1]。0.0 表示直行。
-        # 我们要惩罚两个方面：
+        # 1. 提取动作：只需要惩罚方向盘的抖动 jerk
+        # action[0]是油门，不惩罚。 action[1]是转向。
+        steering_jerk = abs(action[1] - self.last_action[1])
 
-        # a) 转向幅度惩罚：打死方向盘（-1或1）绝对不鼓励，轻微打盘（0.1）惩罚微小。
-        steering_magnitude = abs(action[1])
+        # [v5.0] 专家核心手术：速度约束 (Velocity Constraint)
+        # 我们直接访问物理引擎的 unwrapped 对象，获取最精准的绝对纵向速度 (m/s)
+        ego_speed_vx = self.env.unwrapped.vehicle.speed  # 自车物理速度
 
-        # b) 转向抖动惩罚 (Jerk Penalty)：
-        # 如果从直行(0.0)瞬间变成打死(1.0)，这是一个剧烈的抖动。
-        # 如果从轻微左转(0.1)变成轻微右转(-0.1)，这是一个动作换向的抖动。
-        # 这些剧烈的动作抖动必须重罚。
-        steering_change = abs(action[1] - self.last_action[1])
-
-        # 组合惩罚项 (惩罚必须是负数)
-        # 如果这一局 terminated（撞车）了，就不扣这个动作分了，因为碰撞惩罚足够重。
-        wobble_penalty = 0.0
+        penalty = 0.0
         if not terminated:
-            # 我们重点惩罚转向幅度，因为 user 反馈主要是左右摆头压线
-            wobble_penalty = self.steering_penalty_coeff * (steering_magnitude + steering_change)
-            reward -= wobble_penalty  # 将惩罚减去
+            # a) LQR Jerk 惩罚 (二次型): 0.1^2=0.01; 0.8^2=0.64
+            # 允许平滑超车，严打发癫抖动
+            jerk_penalty = self.jerk_weight * (steering_jerk ** 2)
 
-        # 3. 更新上一个动作状态
+            # b) [v5.0 新增] 致命禁止：纵向倒车惩罚
+            # 在高速上倒着开是绝对红线。如果 vx < 0，给予毁灭性的持续惩罚。
+            reverse_penalty = 0.0
+            if ego_speed_vx < 0:
+                # 倒得越快扣得越多，惩罚是和速度幅度的二次方成正比
+                reverse_penalty = self.reverse_penalty_coeff * (ego_speed_vx ** 2)
+            elif ego_speed_vx < 10.0:
+                # 在高速上龟速跟车(10m/s=36km/h)也要小惩罚，逼迫它加速拿high_speed奖励
+                reverse_penalty = 0.5 * (10.0 - ego_speed_vx)
+
+            penalty = jerk_penalty + reverse_penalty
+            reward -= penalty
+
         self.last_action = action.copy()
+
+        # [v5.0 探针] 将实时速度注入 info 字典，方便 test 脚本读取显示
+        info["ego_speed_vx"] = ego_speed_vx
 
         return next_obs, reward, terminated, truncated, info
 
 
 def create_highway_env(env_name="highway-v0"):
     """
-    工业级环境创建工厂。
+    工业级环境创建工厂：不仅创建环境，还锁死关键配置。
     """
     env = gym.make(env_name, render_mode="rgb_array")
 
-    # [核心防御逻辑] 强制注入严谨的物理配置与KPI
+    # [核心防御逻辑] 强制注入 v5.0 严谨AV法规物理配置
     env.unwrapped.configure({
         "observation": {
             "type": "Kinematics",
@@ -98,14 +103,25 @@ def create_highway_env(env_name="highway-v0"):
         "policy_frequency": 5,
 
         # ----------------------------------------------------
-        # [专家手术点 2] 极度Aggressive的环境KPI配置
-        # 治愈消极怠工
+        # 🎯 [专家手术点 1] v5.0 法规级KPI配置
+        # 治愈草地作弊，解决无意义连续变道
         # ----------------------------------------------------
-        "collision_reward": -10.0,  # [重罚] 撞车重罚：这依然是绝对红线
-        "high_speed_reward": 5.0,  # [大修] 疯狂加倍！重赏之下必有勇夫。彻底覆盖存活低保收益。
-        "reward_speed_range": [20, 30],  # 定义 KPI：速度低于 20m/s (72km/h) 别想拿大钱。
-        "lane_change_reward": -0.2,  # [惩罚] 严禁消极变道跳Bug：鼓励变道超车，但禁止没意义的横跳。
-        "right_lane_reward": 0.0,  # [移除] 移除隐含奖励以消除变道回来的Bug行为，依靠高速奖励和动作惩罚来驱动决策。
+        "offroad_terminal": True,  # [致命红线] 出轨即死刑，杜绝草地作弊！
+        "collision_reward": -10.0,  # [致命红线] 撞车重罚
+        "high_speed_reward": 5.0,  # [提速渴望] 高额提速奖金池
+        "reward_speed_range": [20, 30],
+
+        # [v5.0 优化] 重新引入微小的原生变道惩罚。
+        # 不会阻止它为了超车而变道，但会阻止它无意义地横跨两条车道去加速。
+        "lane_change_reward": -0.02,
+
+        # ----------------------------------------------------
+        # 🎯 [要求B之工业替代方案] 开启轨迹显示
+        # 在渲染阶段，车辆下方会显示一条平滑的轨迹线。
+        # 轨迹越平滑，说明 LQR 效果越好；轨迹剧烈弯曲，说明动作抖动严重。
+        # 这是诊断 jerk 和是否倒车的最佳直观可视化手段！
+        # ----------------------------------------------------
+        "show_trajectories": True,
     })
 
     env.reset()
@@ -114,27 +130,24 @@ def create_highway_env(env_name="highway-v0"):
     env = HighwayFlattenWrapper(env)
 
     # ----------------------------------------------------
-    # 2. [专家手术点 3] 物理套壳：套上动作约束套件
-    # 用于根治 wobbling 和 lane-hopping
+    # 2. [专家手术点 2] 套上 v5.0 AV Control 专家套件
+    # 用于根治倒车苟活和 wobbling
     # ----------------------------------------------------
-    env = HighwayActionWobbleWrapper(env, steering_penalty_coeff=0.5)
+    env = HighwayAVControlWrapper(env, jerk_weight=1.0, reverse_penalty_coeff=10.0)
 
     return env
 
 
 if __name__ == "__main__":
-    # === 探针测试：合理性检验 (Sanity Check) ===
-    print("开始新版 HighwayEnv 数据探针测试...")
+    # === 探针测试 ===
+    print("开始 HighwayEnv v5.0 AV 法规版探针测试...")
     env = create_highway_env()
-
     obs, info = env.reset()
-    print(f"\n✅ 成功获取展平后的观测空间，Shape: {obs.shape}")
-    print(f"✅ 动作空间，Shape: {env.action_space.shape}")
 
-    # 测试一步随机交互，检查奖励是否合理
-    random_action = np.array([1.0, 1.0])  # 疯狂踩油门打方向盘的发癫动作
-    next_obs, reward, terminated, truncated, _ = env.step(random_action)
-    print(f"\n🚗 发癫随机执行动作: {random_action}")
-    print(f"💰 获得塑形后奖励: {reward:.4f} (如果环境物理引擎计算小车没加速成功，这里应该是一个由于动作过大导致的负分)")
+    # 测试一步倒车动作：检查 info 探针和奖励
+    reverse_action = np.array([-1.0, 0.0])  # 踩死刹车，直行倒车
+    for _ in range(5):
+        _, reward, _, _, info = env.step(reverse_action)
+        print(f"🚗 物理倒车 vx: {info['ego_speed_vx']:.2f} m/s | 💰 塑形后奖励: {reward:.4f} (应该吃到毁灭性惩罚)")
 
     env.close()
