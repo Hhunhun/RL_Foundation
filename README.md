@@ -1,42 +1,39 @@
-# RL Foundation: Autonomous Driving Control via Soft Actor-Critic and Reward Shaping
+# RL Foundation: Autonomous Driving Control via SAC and Reward Shaping
 
 ## 1. 项目概述 (Project Overview)
-本项目构建了一个基于深度强化学习（Deep Reinforcement Learning, DRL）的自动驾驶规控框架。核心算法采用连续动作空间的软演员-评论家算法（Soft Actor-Critic, SAC），并在 `highway-v0` 仿真环境中进行高速公路场景下的变道与速度控制训练。
+本项目构建了一个基于深度强化学习（Deep Reinforcement Learning, DRL）的自动驾驶规控基准平台（Baseline Framework）。核心算法采用连续动作空间的软演员-评论家算法（Soft Actor-Critic, SAC），在 `highway-v0` 仿真环境中进行高速公路多车道交互场景下的变道与速度控制训练。
 
-本项目的核心研究重点在于**奖励塑形（Reward Shaping）**与**动作空间约束（Action Space Constraints）**。通过多版本的迭代与消融实验，系统性地解决了强化学习在自动驾驶领域常见的“奖励作弊（Reward Hacking）”问题（如越野行驶、倒车苟活等），最终实现符合交通法规与运动学平滑性的专家级策略。
+本阶段（RL Foundation）的核心研究目的在于：**探究 Model-free RL 在复杂规控任务中的能力边界**。通过多版本的奖励塑形（Reward Shaping）、动作空间绝对约束（Action Space Constraints）以及冻结物理评估环境的确立，系统性地揭示了单步反应式 RL 在“安全（Safety）与效率（Efficiency）”上的博弈困境，为下一阶段引入生成式扩散模型（Diffusion Models）进行长视野轨迹规划奠定基础与核心动机（Motivation）。
 
-## 2. 核心架构 (Architecture)
-项目代码结构解耦为算法核心、环境封装、训练循环与量化评估四大模块：
+## 2. 核心架构与“绝对冻结”评估体系 (Architecture & Evaluation)
+项目不仅包含算法实现，更着重打造了**工业级的公平评估流水线**：
 
-* `algorithms/sac/`: SAC 算法的底层实现（Actor-Critic 网络架构、经验回放池、温度参数自适应调整）。
-* `envs/highway_wrapper.py`: 环境包装器。负责状态空间降维（Flatten）、物理边界定义，以及核心的**AV Control (LQR 二次型平滑与速度约束)** 惩罚机制。
-* `utils/logger.py`: 监控模块。集成了强制物理落盘（`flush`）机制的 TensorBoard 记录器，解决 Windows 平台下的 I/O 缓冲延迟问题。
-* `main_highway.py`: 训练主循环。采用**基于环境步数（Step-based）**的训练逻辑（支持 120,000+ 步大规模交互），彻底解决早期欠拟合问题。
-* `evaluate_models.py`: 双线程量化评估流水线。分离视频录制与大规模蒙特卡洛统计进程，自动计算均值、标准差与存活率，并输出学术级对比图表。
+* **环境包装器 (`envs/highway_wrapper.py`)**：
+  * **训练态 (`is_eval=False`)**：挂载 LQR 二次型转向惩罚、倒车重罚、龟速惩罚等严厉的先验引导奖励，用于解决早期模型钻物理引擎漏洞（Offroad Hacking, Reverse Hacking）的问题。
+  * **评估态 (`is_eval=True`)**：**冻结考场机制**。在模型评估阶段，系统强制剥离所有人工塑形奖励，仅保留最纯净的客观物理碰撞与提速得分，确保所有历史版本乃至未来不同架构模型在同一标尺下进行绝对公平的量化对比。
+* **双线程评估系统 (`evaluate_models.py`)**：分离视频录制（定性分析）与无头全速蒙特卡洛统计（定量分析），自动计算存活率、均速、策略标准差，并输出 CSV 数据与学术级箱线图。
 
-## 3. 奖励塑形与策略演进 (Reward Shaping Evolution)
-为验证惩罚机制的有效性，本项目记录了 5 个核心版本的消融实验（Ablation Study）。环境的观测状态为运动学特征（Kinematics），动作空间为连续的 `[throttle, steering]`。
+## 3. 策略演进与消融实验 (Ablation Study)
+本项目完整记录了 6 个大版本的迭代历史。在纯净物理环境（冻结考场）下的量化测试暴露出传统 RL 的核心痛点：
 
-| 版本 (Version) | 约束机制 (Constraints & Wrappers) | 实战表现定性分析 (Qualitative Analysis) |
-| :--- | :--- | :--- |
-| **v1.0 Baseline** | 无约束 | 存活率高，但在车道内存在高频方向盘抖动（Wobbling），且由于原生变道惩罚导致策略极度保守。 |
-| **v2.0 Linear Penalty** | 提高速度奖励，引入线性转向惩罚 | 惩罚过重导致拒绝变道；发现物理引擎漏洞，策略演化为通过**驶入草地（Offroad Hacking）**来规避碰撞并获取最高分。 |
-| **v3.0 LQR Smoothing** | 开启草地出界终止（Offroad Terminal），引入二次型（Quadratic）Jerk惩罚 | 逻辑完善，但受限于按局数（Episode）训练的逻辑，早期出界暴毙导致经验池正向样本不足，存在严重**欠拟合**。 |
-| **v4.0 Step-based** | 训练架构升级为按总步数（40k Steps）交互 | 训练充分，彻底学会规避草地。但策略演化出新的作弊行为：通过**高速倒车（Reverse Hacking）**以规避转向惩罚并保持存活。 |
-| **v5.0 AV Regulated** | **LQR 转向惩罚 + 绝对速度约束（禁止 $v_x < 0$）** | 最终版本（120k Steps）。绝对遵循交通法规，方向盘轨迹平滑，遇慢车可稳定做出加速变道超车决策。 |
+| 版本 (Version) | 核心约束机制 | 纯净考场实战表现 (Objective KPI) | 工程诊断与病理分析 |
+| :--- | :--- | :--- | :--- |
+| **v1.0 & v2.0** | 早期无约束或轻度线性约束 | 存活率 ~80%，均速 ~21m/s | 虽然存活率尚可，但在录像中表现出疯狂原地摆头（Wobbling）和越野作弊（Offroad Hacking），缺乏横向稳定性。 |
+| **v3.0** | 引入 LQR 惩罚与出界死刑 | 存活率 **6.7%**，均速 25.6m/s | 由于按局数（Episode）训练，极低容错率导致正向样本匮乏，模型产生**严重欠拟合**，只会踩死油门。 |
+| **v4.0** | 改为 40k 总步数制训练 | - | 训练量达标，但演化出极其危险的**倒车苟活（Reverse Hacking）**以规避转向惩罚。 |
+| **v5.0<br>(Safe Baseline)** | **LQR + 绝对禁止倒车** | 存活率 **90.0%**，均速 **21.13m/s** | 达到了传统 RL 的最稳健状态，但陷入**局部最优**。为了极高的安全性，模型选择不敢超车的“怂包策略”，通行效率低下。 |
+| **v6.0<br>(Efficiency Pro)** | **v5.0 + 绝对转向约束 + 严惩龟速** | 存活率 **76.7%**，均速 **22.42m/s** | 强行逼迫模型提速（打破局部最优），导致在缺乏长程规划的情况下容错率急剧下降，揭示了单步 RL 在**安全与效率间的不可调和性**。 |
 
-## 4. 评估基准与量化指标 (Evaluation Metrics)
-运行评估流水线 `evaluate_models.py`，系统将在 `outputs/eval_results/` 目录下自动生成带有时间戳的专属实验档案，包含以下三个维度的评估：
+## 4. 结论与下一步研究计划 (Conclusion & Future Work)
+综合客观评估数据，本项目正式确立 **v5.0 (Safety Conservative)** 作为后续研究的 Baseline。
 
-1.  **安全性 (Safety)**：通过大样本（N=30/50）测试统计**存活率 (Survival Rate)**。
-2.  **效率性 (Efficiency)**：实时探针提取自车平均纵向速度（Mean Speed $v_x$）与平均累计奖励（Mean Cumulative Reward）。
-3.  **舒适性 (Comfort)**：通过视频渲染阶段启用的 `show_trajectories` 观测车辆轨迹平滑度，验证 LQR 二次型惩罚对抖动（Jerk）的抑制效果。
+**研究发现**：基于 MLP 的无模型强化学习（Model-free RL）由于仅依赖当前帧观测进行单步动作输出，缺乏时空多步推理与预测能力（Long-horizon Prediction）。当面对复杂交通流时，模型无法提前规划安全变道间隙，导致必须在“极度保守（v5.0）”或“危险激进（v6.0）”之间妥协。
 
-生成的统计数据会自动落盘为 `data/summary_metrics.csv`，并利用 Matplotlib 绘制用于学术展示的**累计奖励箱线图 (Boxplot)** 与**存活率柱状图 (Bar chart)**。
+**Next Phase (Diffusion-RL)**：
+下一阶段，项目将从反应式决策（Reactive Decision）转向生成式规划（Generative Planning）。计划引入 **Diffusion Model (扩散模型)**，利用其卓越的多模态分布建模能力，直接在时间尺度上生成未来 $T$ 步的安全轨迹序列，旨在打破 v5.0 的效率瓶颈，实现安全与效率的双赢。
 
 ## 5. 快速开始 (Quick Start)
 
-### 依赖安装 (Dependencies)
-请确保在 Python 环境中安装了以下核心依赖：
+### 依赖安装
 ```bash
 pip install torch numpy gymnasium highway-env tensorboard matplotlib pandas

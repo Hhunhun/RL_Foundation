@@ -34,8 +34,8 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
     print(f"📁 权重路径: {model_path}")
     print("=" * 60)
 
-    # 1. 初始化预备环境获取维度
-    dummy_env = create_highway_env(env_name)
+    # 1. 初始化预备环境获取维度 (强制使用评估冻结模式)
+    dummy_env = create_highway_env(env_name, is_eval=True)
     state_dim = dummy_env.observation_space.shape[0]
     action_dim = dummy_env.action_space.shape[0]
     max_action = float(dummy_env.action_space.high[0])
@@ -54,7 +54,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
     # ==========================================
     if record_video:
         print(f"🎬 [阶段 1] 正在为 {model_name} 录制定性实战视频 (前 2 局)...")
-        env_video = create_highway_env(env_name)
+        env_video = create_highway_env(env_name, is_eval=True)
 
         # 将视频存入本次专属实验档案袋中
         video_dir = os.path.join(eval_run_dir, "videos", model_name)
@@ -81,7 +81,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
     # 阶段二：最高速的大样本定量评估环节
     # ==========================================
     print(f"\n⚡ [阶段 2] 执行 {num_episodes} 局大样本蒙特卡洛测试...")
-    env_eval = create_highway_env(env_name)
+    env_eval = create_highway_env(env_name, is_eval=True)
     metrics = {'rewards': [], 'lengths': [], 'speeds': [], 'crashes': 0}
 
     for ep in range(num_episodes):
@@ -206,10 +206,13 @@ if __name__ == "__main__":
         "v3.0_LQR_Underfit": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth",
 
         # v4.0: 改为步数制练够了4万步，但钻了规则空子学会了“倒车苟活”
-        "v4.0_Reverse_Hacker": "outputs/models/highway-v0_SAC_20260330_013424/sac_highway_final.pth",
+        #"v4.0_Reverse_Hacker": "outputs/models/highway-v0_SAC_20260330_013424/sac_highway_final.pth",
 
         # v5.0: 锁死了倒车和草地，并练够12万步，预期为“法规级专家”
-        "v5.0_AV_Regulated": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth"
+        "v5.0_Safety_Conservative": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth",
+
+        # v6.0: 引入绝对转向约束和高速重塑，表现为“高效超车专家”
+        "v6.0_Efficiency_Pro": "outputs/models/highway-v0_SAC_20260330_213300/sac_highway_final.pth"
     }
 
     NUM_EVAL_EPISODES = 30  # 建议论文取值 50-100，平时测试用 30 足够
