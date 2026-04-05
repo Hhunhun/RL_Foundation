@@ -37,7 +37,7 @@ def main():
     # 动态视频存储路径对齐 (保留原规范)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_run_name = f"{env_name}_{algo_name}_eval_{timestamp}"
-    video_dir = os.path.join("outputs", "videos", video_run_name)
+    video_dir = os.path.join("../outputs", "videos", video_run_name)
     os.makedirs(video_dir, exist_ok=True)
 
     # 录制包装器

@@ -15,7 +15,7 @@ def test_agent_matplotlib():
     max_action = float(env.action_space.high[0])
 
     agent = SACAgent(state_dim, action_dim, action_scale=max_action)
-    model_path = "outputs/models/sac_pendulum.pth"
+    model_path = "../outputs/models/sac_pendulum.pth"
     agent.load_model(model_path)
 
     # 开启交互模式

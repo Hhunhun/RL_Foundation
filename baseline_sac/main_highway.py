@@ -22,11 +22,11 @@ def main():
     # 扩容经验池：复杂环境需要更多的历史数据来稳定 Critic 的评估
     replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(2e5))
     agent = SACAgent(state_dim, action_dim, action_scale=max_action, lr=3e-4)
-    logger = Logger(log_dir="outputs/logs", env_name=env_name)
+    logger = Logger(log_dir="../outputs/logs", env_name=env_name)
 
     # 动态模型存储路径对齐 (解决模型坟场问题)
     run_name = os.path.basename(os.path.normpath(logger.run_dir))
-    model_save_dir = os.path.join("outputs", "models", run_name)
+    model_save_dir = os.path.join("../outputs", "models", run_name)
     os.makedirs(model_save_dir, exist_ok=True)
     print(f"📁 本次运行的模型权重将独立保存在: {model_save_dir}")
 

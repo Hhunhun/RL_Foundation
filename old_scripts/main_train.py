@@ -19,7 +19,7 @@ def main():
     # 1. 实例化核心组件 (统一使用 outputs/ 路径前缀)
     replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=100000)
     agent = SACAgent(state_dim, action_dim, action_scale=max_action, lr=3e-4)
-    logger = Logger(log_dir="outputs/logs", env_name=env_name)  # <-- 调整：统一为 outputs/
+    logger = Logger(log_dir="../outputs/logs", env_name=env_name)  # <-- 调整：统一为 outputs/
 
     max_episodes = 100
     batch_size = 256
@@ -69,7 +69,7 @@ def main():
         print(f"Episode: {episode + 1}/{max_episodes} | Total Steps: {total_steps} | Reward: {episode_reward:.2f}")
 
     # <-- 调整：成功退格！让保存模型逻辑在 100 局循环彻底结束后才执行一次
-    os.makedirs("outputs/models", exist_ok=True)
+    os.makedirs("../outputs/models", exist_ok=True)
     agent.save_model("outputs/models/sac_pendulum.pth")
 
     env.close()
