@@ -20,6 +20,9 @@ from run_01_collect_data import collect_expert_data
 from runners.train_offline_bc import train_diffusion_bc
 from runners.train_online_diff import train_online_diffusion
 
+# 🚨 核心修复：锁定项目根目录绝对路径，防止子脚本寻找路径时发生漂移
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 
 def clear_gpu_memory():
     """
@@ -38,7 +41,7 @@ def get_user_configuration():
     设计了完善的容错机制，防止用户输入非法时间格式导致程序崩溃。
     """
     print("=" * 60)
-    print("🤖 欢迎使用 RL Foundation 自动化训练调度系统")
+    print("🤖 使用 RL Foundation 自动化训练调度系统")
     print("=" * 60)
     print("请选择运行模式:")
     print("  [0] 快速冒烟测试 (SMOKE_TEST) - 极速跑几局，用于验证代码是否会崩溃。")
@@ -89,8 +92,10 @@ if __name__ == "__main__":
 
     # 全局数据路径配置 (控制是否复用之前辛苦跑出来的专家数据)
     REUSE_DATA = True
-    EXISTING_DATA_PATH = "data/expert_data/dataset_v5_20260404_035105/expert_transitions.npz"
-    V5_MODEL_PATH = "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth"
+
+    # 🚨 核心修复：使用 os.path.join 和 PROJECT_ROOT 构建绝对路径
+    EXISTING_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "dataset_v5_20260404_035105", "expert_transitions.npz")
+    V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", "highway-v0_SAC_20260330_135449", "sac_highway_final.pth")
 
     # ==========================================
     # 1. 统一的数据流准备 (Data Preparation)
@@ -195,40 +200,116 @@ if __name__ == "__main__":
 
         # 定义消融实验的参数矩阵 (Ablation Matrix)
         experiment_configs = [
+        # ==========================================
+        # 第一期消融实验矩阵
+        # ==========================================
             # 实验组 1: 微弱引导 (Baseline)
             # 偏保守，主要依靠 BC 模仿专家，Q 网络只提供极其微弱的避障建议
-            {"name": "Exp_1_Gentle_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
+            #{"name": "Exp_1_Gentle_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
 
             # 实验组 2: 标准引导 (推荐配置)
             # 模仿与自主学习的平衡点，最有可能跑出高均速的组合
-            {"name": "Exp_2_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
+            #{"name": "Exp_2_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
 
             # 实验组 3: 强力引导 (压力测试)
             # 给 Critic 更大的话语权，探究平滑环境下的 Critic 是否会导致策略崩坏 (过估计陷阱)
-            {"name": "Exp_3_Strong_Q", "bc_epochs": 50, "q_weight": 0.10, "lr": 3e-4, "episodes": 400},
+            #{"name": "Exp_3_Strong_Q", "bc_epochs": 50, "q_weight": 0.10, "lr": 3e-4, "episodes": 400},
 
             # 实验组 4: 降学习率长跑 (稳定测试)
             # 用更低的学习率和更长的时间，探究算法的理论上限
-            {"name": "Exp_4_Stable_Long", "bc_epochs": 80, "q_weight": 0.05, "lr": 1e-4, "episodes": 500},
+            #{"name": "Exp_4_Stable_Long", "bc_epochs": 80, "q_weight": 0.05, "lr": 1e-4, "episodes": 500},
+        # ==========================================
+        # 第二期消融实验矩阵 (探寻极简与极致稳健)
+        # ==========================================
+            # 实验组 5: 极微引导 (Micro-Q)
+            # 既然 0.01 依然会引起震荡，我们直接将 Critic 的话语权再砍一半。
+            # 探究多小的 Q 值能在不破坏专家安全底线的情况下，依然起到提速作用。
+            #{"name": "Exp_5_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 6: 铁壁底座 (Overfit Prior)
+            # 疯狂增加离线预训练轮次（120 轮），让 Diffusion Actor 对专家动作产生“肌肉记忆”（过拟合）。
+            # 看看极其坚固的先验底座，能否抵御住标准 Q 值 (0.05) 的冲击。
+            #{"name": "Exp_6_Bulletproof_BC", "bc_epochs": 120, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 7: 冰封微调 (Frozen Fine-tuning)
+            # 结合最稳妥的参数：扎实的预训练 + 极小的 Q 引导 + 极低的学习率。
+            # 就像用小刀雕刻冰雕，一点一点地逼近物理极限，这是最有可能诞生 SOTA 的神仙组合。
+            #{"name": "Exp_7_Frozen_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "episodes": 500},
+
+            # 实验组 8: 零引导对照组 (Zero-Q Control)
+            # 极其重要的学术对照组！彻底关闭 Critic 的引导 (q=0.0)，在线阶段完全退化为基于混合经验池的自我模仿学习。
+            # 用于在论文中证明：我们加入强化学习 (RL) 到底有没有用？是不是光靠单纯的 BC 就能达到这个分数？
+            #{"name": "Exp_8_Zero_Q_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+        # ==========================================
+        # 第三期消融实验矩阵 (探寻 SOTA 的绝对极限)
+        # ==========================================
+            # 实验组 9: 终极防御底座 (Deep BC + Frozen Finetune)
+            # Exp_6 证明了即使 120 轮 BC 也挡不住 q=0.05 的破坏。
+            # 那如果我们把最厚的装甲 (bc=120) 和最温柔的刀 (q=0.005, lr=5e-5) 结合呢？
+            # 探究最牢固的先验底座是否能让微调过程的方差降到绝对的 0。
+            #{"name": "Exp_9_Ultimate_Safe_SOTA", "bc_epochs": 120, "q_weight": 0.005, "lr": 5e-5, "episodes": 500},
+
+            # 实验组 10: 加速冰封 (Moderate LR + Micro Q)
+            # Exp_7 的 lr=5e-5 极其稳定，但可能收敛太慢。
+            # 我们把学习率稍微提一点点到 1e-4（Exp_4 证明它在 q=0.05 时会崩，但在 q=0.005 下安全吗？）。
+            # 测试在安全 Q 权重下，网络更新步长的安全上限。
+            #{"name": "Exp_10_Accelerated_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 1e-4, "episodes": 500},
+
+            # 实验组 11: 极限微丝引导 (Ultra-Micro Q)
+            # 探索 Exp_5 (q=0.005) 和 Exp_8 (q=0.0 纯 BC) 之间的地带。
+            # q=0.001 是一个极小的值，它到底是一缕能缓慢提速的清风，还是弱到跟完全关闭 (0.0) 没区别？
+            #{"name": "Exp_11_Ultra_Micro_Q", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 12: 冰封马拉松 (The Marathon)
+            # 既然 Exp_7 (q=0.005, lr=5e-5) 在 500 局结束时 Q 值还在稳步上升（没有平波），
+            # 说明它还没碰到真正的天花板！我们直接给它 800 局的超长时间。
+            # 探究：它是会最终收敛到一个超越所有人的史诗级高分，还是在长期积累后发生“延迟崩溃”？
+            #{"name": "Exp_12_Frozen_Marathon", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "episodes": 800},
+
+        # ==========================================
+        # 第四期消融实验矩阵 (黄金融合与终极天花板)
+        # 核心策略：废弃极低学习率，融合最强先验 (BC=120) 与最优微导 (q=0.01~0.001)
+        # ==========================================
+            # 实验组 13: 终极无坚不摧 (Heavy BC + Ultra-Micro Q)
+            # 结合 Exp_6 的“铁壁底座”与 Exp_11 的“最强微丝引导”。
+            # 用 120 轮预训练筑起绝对安全的防线，然后用极其轻柔的 q=0.001 进行提速。
+            # 这是理论上既能 100% 存活，又能打破均速上限的最优解。
+            #{"name": "Exp_13_Unbreakable_SOTA", "bc_epochs": 120, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 14: 厚甲利刃 (Heavy BC + Gentle Q)
+            # 结合 Exp_6 的“铁壁底座”与 第一期冠军 Exp_1 的“微弱引导”。
+            # q=0.01 的提速动力更足，我们看看 120 轮的厚重底座能否完美抗住这股更强的探索冲动。
+            #{"name": "Exp_14_Thick_Shield_Gentle_Q", "bc_epochs": 120, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 15: 纯粹克隆的物理极限 (Absolute BC Upper Bound)
+            # Exp_8 (BC=50, q=0.0) 表现很好，那如果我们不加任何 RL，纯靠 120 轮死记硬背呢？
+            # 这是一个极其关键的学术对照组，用于对比 Exp_13 和 14，证明在同等底座厚度下，RL 引导依然不可或缺。
+            {"name": "Exp_15_Deep_BC_Control", "bc_epochs": 120, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 16: 微丝引导马拉松 (Ultra-Micro Q Marathon)
+            # Exp_11 (q=0.001, BC=50) 是第三期的冠军。
+            # 我们保持它的完美参数，但给它更长的在线交互时间（600局），探究极微弱引导在长期运行下会不会发生延迟崩溃，还是会爬上巅峰。
+            {"name": "Exp_16_Ultra_Micro_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
         ]
 
         exp_index = 0
         total_exps = len(experiment_configs)
 
-        # 核心挂机循环：只要没到明早设定的时间，就一直干活
-        while datetime.now() < TARGET_END_TIME:
+        # 🚨 核心修复：跑完即停，绝不恋战。删除了之前的扩展逻辑。
+        while exp_index < total_exps:
+            # 安全检查：时间到了立即安全退出
+            if TARGET_END_TIME and datetime.now() >= TARGET_END_TIME:
+                print(f"⏰ 到达设定的截止时间 {TARGET_END_TIME.strftime('%Y-%m-%d %H:%M:%S')}，正在安全终止后续实验...")
+                break
+
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n⏰ 当前时间: {current_time} | 目标结束时间: {TARGET_END_TIME.strftime('%Y-%m-%d %H:%M:%S')}")
+            config = experiment_configs[exp_index]
 
-            # 如果预设的矩阵跑完了但天还没亮，就复制最后一组参数继续跑（加长版），榨干显卡价值
-            if exp_index < total_exps:
-                config = experiment_configs[exp_index]
-            else:
-                config = experiment_configs[-1].copy()
-                config["name"] = f"Exp_Extra_{exp_index}"
-                config["episodes"] += 100
-
-            print(f"\n🚀 开始执行实验组: {config['name']} | 参数: {config}")
+            print(f"\n==================================================")
+            print(f"🚀 [进度 {exp_index + 1}/{total_exps}] 开始执行实验组: {config['name']}")
+            print(f"⏰ 当前时间: {current_time}")
+            print(f"📊 参数配置: {config}")
+            print(f"==================================================")
 
             # 执行该组参数的离线 BC
             pretrained_model_path = train_diffusion_bc(
@@ -255,5 +336,5 @@ if __name__ == "__main__":
             time.sleep(10)  # 跑完一组休息 10 秒，让显存飞一会儿
 
         print("\n" + "=" * 60)
-        print(f"⏰ 设定时间 ({TARGET_END_TIME.strftime('%H:%M')}) 已到达！通宵脚本顺利收工。")
+        print("🎯 通宵跑参调度器任务结束。所有规划的实验已成功跑完或安全终止。")
         print("=" * 60)

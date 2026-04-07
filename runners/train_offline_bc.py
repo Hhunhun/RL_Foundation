@@ -43,9 +43,12 @@ def train_diffusion_bc(data_path, num_epochs=50, batch_size=256, learning_rate=3
     optimizer = torch.optim.Adam(actor_net.parameters(), lr=learning_rate)
     loss_fn = nn.MSELoss()
 
-    # 准备模型保存路径
+    # 锁定项目根目录 (此脚本在 runners/ 下，向上回退两级到达 RL_Foundation)
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # 准备模型保存路径 (使用绝对路径构建)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join("../outputs", "models", f"diffusion_bc_{timestamp}")
+    save_dir = os.path.join(PROJECT_ROOT, "outputs", "models", f"diffusion_bc_{timestamp}")
     os.makedirs(save_dir, exist_ok=True)
 
     # 开启训练模式 (启用 Dropout/BatchNorm 等训练期特有行为)

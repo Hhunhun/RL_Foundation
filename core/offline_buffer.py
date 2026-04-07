@@ -74,8 +74,8 @@ class MixedReplayBuffer:
     """
     混合经验回放池 (核心组件)。
     用于第二阶段在线 RL 微调。它在内存中同时维护两份数据：
-    1. 固定的专家数据 (Expert Data)
-    2. 动态滚动的在线数据 (Online Data)
+    1. 固定的专家数据 (Expert Data): 不可变，永久保存。
+    2. 动态滚动的在线数据 (Online Data): 环形缓冲区，使用 FIFO 规则覆盖。
     在采样时按固定比例混合这两者，并为每个样本打上标签 (is_expert)。
     """
 

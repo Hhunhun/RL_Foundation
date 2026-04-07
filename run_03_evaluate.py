@@ -22,6 +22,8 @@ import warnings
 # ----------------------------------------------------
 warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+# 精准屏蔽 Gymnasium 的录像覆盖警告
+warnings.filterwarnings("ignore", message=".*Overwriting existing videos.*")
 
 import gymnasium as gym
 from gymnasium.wrappers import RecordVideo
@@ -175,7 +177,7 @@ def save_metrics_to_csv(all_results, save_dir):
     """
     os.makedirs(save_dir, exist_ok=True)
     csv_path = os.path.join(save_dir, 'summary_metrics.csv')
-    headers = ['模型版本 (Model)', '平均累计奖励 (Mean Reward)', '策略反差/标准差 (Std Reward)',
+    headers = ['模型版本 (Model)', '平均累计奖励 (Mean Reward)', '策略方差/标准差 (Std Reward)',
                '存活率 (Survival Rate %)', '平均纵向速度 (Mean Speed m/s)']
 
     with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
@@ -223,7 +225,7 @@ def plot_comparisons(all_results, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'survival_rate_bar.png'), dpi=300)
     plt.close()
-    print(f"📈 学术对比图表已保存至: {os.path.abspath(save_dir)}")
+    print(f"📈 对比图表已保存至: {os.path.abspath(save_dir)}")
 
 
 if __name__ == "__main__":
@@ -235,13 +237,13 @@ if __name__ == "__main__":
     # ==========================================
     models_to_evaluate = {
         # v1.0: 没有任何约束，表现为“原地发癫”和“极度胆小”
-        "v1.0_Unconstrained": "outputs/models/highway-v0_SAC_20260329_150543/sac_highway_final.pth",
+        #"v1.0_Unconstrained": "outputs/models/highway-v0_SAC_20260329_150543/sac_highway_final.pth",
 
         # v2.0: 强化了速度奖励但没关草地，表现为“草地飙车党”
-        "v2.0_Offroad_Hacker": "outputs/models/highway-v0_SAC_20260329_185751/sac_highway_final.pth",
+        #"v2.0_Offroad_Hacker": "outputs/models/highway-v0_SAC_20260329_185751/sac_highway_final.pth",
 
         # v3.0: 开启了草地死刑和LQR惩罚，但因局数制导致“严重欠拟合/早产”
-        "v3.0_LQR_Underfit": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth",
+        #"v3.0_LQR_Underfit": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth",
 
         # v5.0: 锁死了倒车和草地，并练够12万步，表现为求稳的“法规级专家”
         "v5.0_Safety_Conservative": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth",
@@ -253,21 +255,82 @@ if __name__ == "__main__":
         "Diff_Exp1_Gentle_Q": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth",
 
         # Diff-Exp2: 标准 Q 引导 (q=0.05)，模仿与自主探索的平衡，偶尔会在超车时发生失误
-        "Diff_Exp2_Standard_Q": "outputs/models/highway_DiffSAC_20260405_065603/diff_sac_ep400.pth",
+        #"Diff_Exp2_Standard_Q": "outputs/models/highway_DiffSAC_20260405_065603/diff_sac_ep400.pth",
 
         # Diff-Exp3: 强力 Q 引导 (q=0.10)，完全陷入过估计陷阱，表现为“理论满分，实操零分”的翻车司机
-        "Diff_Exp3_Strong_Q": "outputs/models/highway_DiffSAC_20260405_101704/diff_sac_ep400.pth",
+        #"Diff_Exp3_Strong_Q": "outputs/models/highway_DiffSAC_20260405_101704/diff_sac_ep400.pth",
 
         # Diff-Exp4: 降学习率长跑 (lr=1e-4)，企图驯服高方差，但依然未能逃脱 OOD 陷阱
-        "Diff_Exp4_Stable_Long": "outputs/models/highway_DiffSAC_20260405_141352/diff_sac_ep500.pth"
+        #"Diff_Exp4_Stable_Long": "outputs/models/highway_DiffSAC_20260405_141352/diff_sac_ep500.pth",
+
+        # Diff-Exp5: 极微引导 (q=0.005)，大幅削弱 RL 话语权，成功将 Actor 拉回安全边界，表现为“试探边界的行者”
+        #"Diff_Exp5_Micro_Q": "outputs/models/highway_DiffSAC_20260406_023023/diff_sac_ep400.pth",
+
+        # Diff-Exp6: 铁壁底座 (bc_epochs=120, q=0.05)，企图用超长预训练对抗分布偏移，但安全底线依然被 RL 粉碎的“反面教材”
+        "Diff_Exp6_Bulletproof_BC": "outputs/models/highway_DiffSAC_20260406_040052/diff_sac_ep400.pth",
+
+        # Diff-Exp7: 冰封微调 (q=0.005, lr=5e-5)，通过极致的保守实现安全与效率的完美平衡，理论上的“SOTA 冠军候选人”
+        #"Diff_Exp7_Frozen_Finetune": "outputs/models/highway_DiffSAC_20260406_052938/diff_sac_ep500.pth",
+
+        # Diff-Exp8: 零引导对照组 (q=0.0)，彻底关闭 Critic，退化为纯行为克隆的“循规蹈矩模仿者”，用于证明 RL 的必要性
+        "Diff_Exp8_Zero_Q_Control": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth",
+
+        # Diff-Exp9: 终极防御底座 (bc=120, q=0.005, lr=5e-5)，结合最厚装甲与最温柔微调，成功压制了在线微调初期的震荡
+        #"Diff_Exp9_Ultimate_Safe_SOTA": "outputs/models/highway_DiffSAC_20260406_153903/diff_sac_ep500.pth",
+
+        # Diff-Exp10: 加速冰封 (q=0.005, lr=1e-4)，在微弱引导下适度提升学习率，在保证不崩溃的前提下提升了环境适应效率
+        #"Diff_Exp10_Accelerated_Finetune": "outputs/models/highway_DiffSAC_20260406_172128/diff_sac_ep500.pth",
+
+        # Diff-Exp11: 极限微丝引导 (q=0.001)，进一步压低 RL 权重，Q值有效受到抑制并贴近专家分布，生存下限得到极大保障
+        "Diff_Exp11_Ultra_Micro_Q": "outputs/models/highway_DiffSAC_20260406_211102/diff_sac_ep400.pth",
+
+        # Diff-Exp12: 冰封马拉松 (ep=800)，进行超长周期的极限保守微调，Q值平滑攀升且全程未发生延迟崩溃，验证了长期稳定性
+        #"Diff_Exp12_Frozen_Marathon": "outputs/models/highway_DiffSAC_20260407_013017/diff_sac_ep800.pth",
+
+        # Diff-Exp13: 终极无坚不摧 (BC=120, q=0.001, lr=3e-4)，最厚护甲与最轻引导的黄金融合，Actor Loss 平稳缓降，预期防守反击 SOTA
+        "Diff_Exp13_Unbreakable_SOTA": "outputs/models/highway_DiffSAC_20260407_071544/diff_sac_ep400.pth",
+
+        # Diff-Exp14: 厚甲利刃 (BC=120, q=0.01, lr=3e-4)，更高 Q 引导导致 Actor Loss 显著下探但未崩溃，Q 值全场最高，预期均速 SOTA
+        "Diff_Exp14_Thick_Shield_Gentle_Q": "outputs/models/highway_DiffSAC_20260407_110205/diff_sac_ep400.pth",
+
+        # Diff-Exp15: 纯粹克隆的物理极限 (BC=120, q=0.0, lr=3e-4)，彻底关闭引导，Actor Loss 最平缓，提供 120 轮先验下的最高安全基准
+        "Diff_Exp15_Deep_BC_Control": "outputs/models/highway_DiffSAC_20260407_140041/diff_sac_ep400.pth",
+
+        # Diff-Exp16: 微丝引导马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，第三期冠军参数的加长版验证，600 局探索全程平滑无延迟崩溃
+        "Diff_Exp16_Ultra_Micro_Marathon": "outputs/models/highway_DiffSAC_20260407_170756/diff_sac_ep600.pth",
+
+        # Diff-Exp8_Run1: 零引导对照组 (首次测试，q=0.0, ep=400)，Critic 曲线全程平滑
+        #"Diff_Exp8_Zero_Q_Run1": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth",
+
+        # Diff-Exp8_Run2: 零引导对照组 (第二次测试，q=0.0, ep=500)，Critic 在后期发生震荡，但由于 q=0 被隔离
+        #"Diff_Exp8_Zero_Q_Run2": "outputs/models/highway_DiffSAC_20260406_080556/diff_sac_ep500.pth",
+
+        # Diff-Exp8_Run3: 零引导对照组 (第三次测试，q=0.0, ep=500)，Critic 在中期发生剧烈脉冲，同样被 q=0 隔离
+        #"Diff_Exp8_Zero_Q_Run3": "outputs/models/highway_DiffSAC_20260406_095201/diff_sac_ep500.pth",
     }
 
     # 大样本测试局数，100 局是学术界的黄金免检样本量
     NUM_EVAL_EPISODES = 100
 
-    # 生成本次评估实验的独立档案袋
+    # ==========================================
+    # 动态文件夹命名逻辑：自动提取参与评估的模型简称
+    # ==========================================
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    eval_run_name = f"eval_Ablation_Study_{timestamp}"
+    version_tags = []
+
+    for name in models_to_evaluate.keys():
+        if name.startswith("v"):
+            # 提取 v5.0, v6.0
+            version_tags.append(name.split('_')[0])
+        else:
+            # 提取 Exp1, Exp2, Exp5 等
+            version_tags.append(name.split('_')[1])
+
+    # 将提取的标签拼接起来，例如: v5.0_v6.0_Exp1_Exp2_Exp5_Exp6_Exp7_Exp8
+    versions_str = "_".join(version_tags)
+    eval_run_name = f"eval_[{versions_str}]_{timestamp}"
+
+    # 构建最终的保存路径
     eval_run_dir = os.path.join("outputs", "eval_results", eval_run_name)
     plot_save_dir = os.path.join(eval_run_dir, "plots")
     data_save_dir = os.path.join(eval_run_dir, "data")

@@ -44,10 +44,13 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, max_episodes
     # 内部会自动读取专家数据，并建立全局唯一的数据归一化基准 (Normalizers)
     replay_buffer = MixedReplayBuffer(expert_data_path=expert_data_path, max_online_size=100000, device=device)
 
-    # --- 日志与存档准备 ---
+    # 锁定项目根目录 (此脚本在 runners/ 下，向上回退两级到达 RL_Foundation)
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # --- 日志与存档准备 --- (使用绝对路径构建)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join("../outputs", "models", f"highway_DiffSAC_{timestamp}")
-    log_dir = os.path.join("../outputs", "logs", f"highway_DiffSAC_{timestamp}")
+    save_dir = os.path.join(PROJECT_ROOT, "outputs", "models", f"highway_DiffSAC_{timestamp}")
+    log_dir = os.path.join(PROJECT_ROOT, "outputs", "logs", f"highway_DiffSAC_{timestamp}")
     os.makedirs(save_dir, exist_ok=True)
 
     writer = SummaryWriter(log_dir=log_dir)
