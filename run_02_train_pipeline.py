@@ -93,18 +93,21 @@ if __name__ == "__main__":
     # 全局数据路径配置 (控制是否复用之前辛苦跑出来的专家数据)
     REUSE_DATA = True
 
-    # 🚨 核心修复：使用 os.path.join 和 PROJECT_ROOT 构建绝对路径
-    EXISTING_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "dataset_v5_20260404_035105", "expert_transitions.npz")
+    # 🚨 修复：使用 os.path.join 和 PROJECT_ROOT 构建绝对路径
+    #EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "dataset_v5_20260404_035105", "expert_transitions.npz")
     V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", "highway-v0_SAC_20260330_135449", "sac_highway_final.pth")
+
+    # 🚨 进阶：将专家数据路径指向昨天跑出的“v5+v6 混合数据集”
+    EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT,"data","expert_data","dataset_mixed_80_20_20260410_031547", "expert_transitions_mixed_80_20.npz")
 
     # ==========================================
     # 1. 统一的数据流准备 (Data Preparation)
     # ==========================================
     # 在所有实验开始前，先确保我们有充足的专家数据
     print("\n" + "=" * 60)
-    if REUSE_DATA and os.path.exists(EXISTING_DATA_PATH):
-        print(f"📦 阶段一: 复用已有专家数据 -> {EXISTING_DATA_PATH}")
-        data_path = EXISTING_DATA_PATH
+    if REUSE_DATA and os.path.exists(EXPERT_DATA_PATH):
+        print(f"📦 阶段一: 复用已有专家数据 -> {EXPERT_DATA_PATH}")
+        data_path = EXPERT_DATA_PATH
     else:
         print("🚀 阶段一: 重新采集专家数据...")
         # 如果没有历史数据，就现场召唤 SAC 专家跑出 5 万步的数据集
@@ -284,12 +287,36 @@ if __name__ == "__main__":
             # 实验组 15: 纯粹克隆的物理极限 (Absolute BC Upper Bound)
             # Exp_8 (BC=50, q=0.0) 表现很好，那如果我们不加任何 RL，纯靠 120 轮死记硬背呢？
             # 这是一个极其关键的学术对照组，用于对比 Exp_13 和 14，证明在同等底座厚度下，RL 引导依然不可或缺。
-            {"name": "Exp_15_Deep_BC_Control", "bc_epochs": 120, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            #{"name": "Exp_15_Deep_BC_Control", "bc_epochs": 120, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
 
             # 实验组 16: 微丝引导马拉松 (Ultra-Micro Q Marathon)
             # Exp_11 (q=0.001, BC=50) 是第三期的冠军。
             # 我们保持它的完美参数，但给它更长的在线交互时间（600局），探究极微弱引导在长期运行下会不会发生延迟崩溃，还是会爬上巅峰。
-            {"name": "Exp_16_Ultra_Micro_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
+            #{"name": "Exp_16_Ultra_Micro_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
+
+        # ==========================================
+        # 第五期实验矩阵 (混合数据集突围测试)
+        # 核心目的：验证混合流形能否在保持高存活率的同时，打破 22 m/s 均速天花板
+        # ==========================================
+            # 实验组 17: 纯混合克隆基准 (Mixed BC Control)
+            # 对应之前的 Exp_8。完全关闭 Q 引导 (q=0.0)。
+            # 这是极其关键的基准线！我们要看仅仅是“喂了更好的数据”，模型纯靠模仿，能否在速度上超越以前的 Exp_8。
+            #{"name": "Exp_17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 18: 混合流形冠军 (Mixed Ultra-Micro Q)
+            # 对应之前的全场最佳 Exp_11。
+            # 这是我们冲击最终 SOTA 的主力军！看看在混合神仙数据的加持下，0.001 的微弱提速能否完美兑现。
+            #{"name": "Exp_18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 19: 数据容量扩充测试 (Mixed Thicker Base)
+            # 这是一个新策略！因为混合数据集包含了“减速”和“极速”两种互相矛盾的动作，流形变复杂了。
+            # 50 轮预训练可能背不过这么复杂的规律，所以我们把底座适度加厚到 80 轮（但避开 120 轮的死板陷阱）。
+            #{"name": "Exp_19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+
+            # 实验组 20: 混合马拉松 (Mixed Marathon)
+            # 对应之前的 Exp_16。
+            # 既然数据更丰富了，给它更长的在线交互时间（600局），看它能否彻底融会贯通，攀上均速的巅峰。
+            {"name": "Exp_20_Mixed_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
         ]
 
         exp_index = 0

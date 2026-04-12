@@ -192,40 +192,103 @@ def save_metrics_to_csv(all_results, save_dir):
 def plot_comparisons(all_results, save_dir):
     """
     自动生成学术级对比箱线图和柱状图。
+    包含四张核心图表：回报箱线图、策略方差柱状图、存活率柱状图、均速柱状图。
     """
     os.makedirs(save_dir, exist_ok=True)
     models = list(all_results.keys())
+    colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
 
-    # 图 1：累计奖励箱线图
+    # ----------------------------------------------------
+    # 图 1：累计奖励箱线图 (新增均值文本标注)
+    # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
     reward_data = [all_results[m]['raw_rewards'] for m in models]
-    # showfliers=False 会隐藏那些极其偶然的严重扣分(离群点)，使得主流分布清晰可见
+    # showfliers=False 会隐藏离群点，使得主流分布清晰可见
     plt.boxplot(reward_data, labels=models, showmeans=True, showfliers=False)
-    plt.title('规控策略演进与消融实验对比 (Cumulative Reward)', fontsize=14)
+    plt.title('规控策略演进与消融实验对比 (Cumulative Reward)', fontsize=14, fontweight='bold')
     plt.ylabel('Episode Reward (Outliers Hidden)', fontsize=12)
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # 🆕 新增：在绿色均值三角形旁边标注具体的数值
+    means = [all_results[m]['mean_reward'] for m in models]
+    for i, mean_val in enumerate(means):
+        # i + 1 是因为 boxplot 的 x 轴刻度是从 1 开始的
+        plt.text(i + 1.05, mean_val, f'{mean_val:.1f}', va='center', ha='left',
+                 color='green', fontsize=10, fontweight='bold')
+
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'reward_boxplot.png'), dpi=300)
+    plt.savefig(os.path.join(save_dir, '01_reward_boxplot.png'), dpi=300)
     plt.close()
 
-    # 图 2：存活率柱状图
+    # ----------------------------------------------------
+    # 🆕 图 2：策略方差/标准差柱状图 (越低代表模型越稳定)
+    # ----------------------------------------------------
+    plt.figure(figsize=(12, 7))
+    std_rewards = [all_results[m]['std_reward'] for m in models]
+    bars_std = plt.bar(models, std_rewards, color=colors, alpha=0.8)
+    plt.title('规控策略稳定性对比 (Standard Deviation of Reward)', fontsize=14, fontweight='bold')
+    plt.ylabel('Reward Std. Dev (Lower is Better)', fontsize=12)
+    plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.3)
+
+    # 在柱子上标注具体数字
+    for bar in bars_std:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.5, f'{yval:.1f}', ha='center', va='bottom', fontsize=10)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, '02_reward_variance_bar.png'), dpi=300)
+    plt.close()
+
+    # ----------------------------------------------------
+    # 图 3：存活率柱状图
+    # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
     survival_rates = [all_results[m]['survival_rate'] for m in models]
-    colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
-    bars = plt.bar(models, survival_rates, color=colors)
-    plt.title('规控策略存活率对比 (Survival Rate)', fontsize=14)
+    bars_surv = plt.bar(models, survival_rates, color=colors, alpha=0.9)
+    plt.title('规控策略存活率对比 (Survival Rate)', fontsize=14, fontweight='bold')
     plt.ylabel('Survival Rate (%)', fontsize=12)
     plt.ylim(0, 105)
     plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.3)
+
     # 在柱子上标注具体数字
-    for bar in bars:
+    for bar in bars_surv:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + 1, f'{yval:.1f}%', ha='center', va='bottom')
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 1, f'{yval:.1f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'survival_rate_bar.png'), dpi=300)
+    plt.savefig(os.path.join(save_dir, '03_survival_rate_bar.png'), dpi=300)
     plt.close()
-    print(f"📈 对比图表已保存至: {os.path.abspath(save_dir)}")
+
+    # ----------------------------------------------------
+    # 🆕 图 4：平均纵向速度柱状图 (Y 轴特意从 20 开始，放大差异)
+    # ----------------------------------------------------
+    plt.figure(figsize=(12, 7))
+    mean_speeds = [all_results[m]['mean_speed'] for m in models]
+    bars_speed = plt.bar(models, mean_speeds, color=colors, alpha=0.8)
+    plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)', fontsize=14, fontweight='bold')
+    plt.ylabel('Mean Speed (m/s)', fontsize=12)
+
+    # 动态设定 Y 轴下限：高速公路场景速度下限设为 20 能更清晰地看出突破
+    min_speed = min(mean_speeds)
+    max_speed = max(mean_speeds)
+    plt.ylim(20.0, max_speed + 1.0)
+
+    plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
+
+    # 在柱子上标注具体数字
+    for bar in bars_speed:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.1, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, '04_mean_speed_bar.png'), dpi=300)
+    plt.close()
+
+    print(f"📈 4 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
 
 if __name__ == "__main__":
@@ -252,7 +315,7 @@ if __name__ == "__main__":
         "v6.0_Efficiency_Pro": "outputs/models/highway-v0_SAC_20260330_213300/sac_highway_final.pth",
 
         # Diff-Exp1: 微弱 Q 引导 (q=0.01)，高度依赖专家先验，理论上的“无冕之王/最稳老司机”
-        "Diff_Exp1_Gentle_Q": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth",
+        #"Diff_Exp1_Gentle_Q": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth",
 
         # Diff-Exp2: 标准 Q 引导 (q=0.05)，模仿与自主探索的平衡，偶尔会在超车时发生失误
         #"Diff_Exp2_Standard_Q": "outputs/models/highway_DiffSAC_20260405_065603/diff_sac_ep400.pth",
@@ -267,7 +330,7 @@ if __name__ == "__main__":
         #"Diff_Exp5_Micro_Q": "outputs/models/highway_DiffSAC_20260406_023023/diff_sac_ep400.pth",
 
         # Diff-Exp6: 铁壁底座 (bc_epochs=120, q=0.05)，企图用超长预训练对抗分布偏移，但安全底线依然被 RL 粉碎的“反面教材”
-        "Diff_Exp6_Bulletproof_BC": "outputs/models/highway_DiffSAC_20260406_040052/diff_sac_ep400.pth",
+        #"Diff_Exp6_Bulletproof_BC": "outputs/models/highway_DiffSAC_20260406_040052/diff_sac_ep400.pth",
 
         # Diff-Exp7: 冰封微调 (q=0.005, lr=5e-5)，通过极致的保守实现安全与效率的完美平衡，理论上的“SOTA 冠军候选人”
         #"Diff_Exp7_Frozen_Finetune": "outputs/models/highway_DiffSAC_20260406_052938/diff_sac_ep500.pth",
@@ -288,16 +351,31 @@ if __name__ == "__main__":
         #"Diff_Exp12_Frozen_Marathon": "outputs/models/highway_DiffSAC_20260407_013017/diff_sac_ep800.pth",
 
         # Diff-Exp13: 终极无坚不摧 (BC=120, q=0.001, lr=3e-4)，最厚护甲与最轻引导的黄金融合，Actor Loss 平稳缓降，预期防守反击 SOTA
-        "Diff_Exp13_Unbreakable_SOTA": "outputs/models/highway_DiffSAC_20260407_071544/diff_sac_ep400.pth",
+        #"Diff_Exp13_Unbreakable_SOTA": "outputs/models/highway_DiffSAC_20260407_071544/diff_sac_ep400.pth",
 
         # Diff-Exp14: 厚甲利刃 (BC=120, q=0.01, lr=3e-4)，更高 Q 引导导致 Actor Loss 显著下探但未崩溃，Q 值全场最高，预期均速 SOTA
-        "Diff_Exp14_Thick_Shield_Gentle_Q": "outputs/models/highway_DiffSAC_20260407_110205/diff_sac_ep400.pth",
+        #"Diff_Exp14_Thick_Shield_Gentle_Q": "outputs/models/highway_DiffSAC_20260407_110205/diff_sac_ep400.pth",
 
         # Diff-Exp15: 纯粹克隆的物理极限 (BC=120, q=0.0, lr=3e-4)，彻底关闭引导，Actor Loss 最平缓，提供 120 轮先验下的最高安全基准
-        "Diff_Exp15_Deep_BC_Control": "outputs/models/highway_DiffSAC_20260407_140041/diff_sac_ep400.pth",
+        #"Diff_Exp15_Deep_BC_Control": "outputs/models/highway_DiffSAC_20260407_140041/diff_sac_ep400.pth",
 
         # Diff-Exp16: 微丝引导马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，第三期冠军参数的加长版验证，600 局探索全程平滑无延迟崩溃
-        "Diff_Exp16_Ultra_Micro_Marathon": "outputs/models/highway_DiffSAC_20260407_170756/diff_sac_ep600.pth",
+        #"Diff_Exp16_Ultra_Micro_Marathon": "outputs/models/highway_DiffSAC_20260407_170756/diff_sac_ep600.pth",
+
+        # Diff-Exp17: 纯混合克隆基准 (BC=50, q=0.0, lr=3e-4, ep=400)，完全关闭 Q 引导，验证纯靠 v5+v6 神仙数据喂出来的底层模仿上限
+        #"Diff_Exp17_Mixed_BC_Control": "outputs/models/highway_DiffSAC_20260408_141756/diff_sac_ep400.pth",
+
+        # Diff-Exp18: 混合流形冠军 (BC=50, q=0.001, lr=3e-4, ep=400)，在混合神仙数据上叠加极微丝引导，冲击均速与安全性双重 SOTA 的绝对主力
+        #"Diff_Exp18_Mixed_Ultra_Micro": "outputs/models/highway_DiffSAC_20260408_155039/diff_sac_ep400.pth",
+
+        # Diff-Exp19: 数据容量扩充测试 (BC=80, q=0.001, lr=3e-4, ep=400)，将预训练适度加厚至 80 轮，测试其能否更好地消化充满矛盾（保守与极速）的复杂混合流形
+        #"Diff_Exp19_Mixed_Thicker_Base": "outputs/models/highway_DiffSAC_20260408_190001/diff_sac_ep400.pth",
+
+        # Diff-Exp20: 混合马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，冠军参数的加长版在线探索，验证更丰富的混合数据在长周期微调下的最终爆发力
+        "Diff_Exp20_Mixed_Marathon": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth",
+
+        # Diff-Exp21: 黄金比例马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，采用 80% 保守底座与 20% 激进利刃的黄金数据融合，孤注一掷冲击存活率 80%+ 与均速 22.0+ 的双重 SOTA
+        "Diff_Exp21_Golden_Ratio_Marathon": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth",
 
         # Diff-Exp8_Run1: 零引导对照组 (首次测试，q=0.0, ep=400)，Critic 曲线全程平滑
         #"Diff_Exp8_Zero_Q_Run1": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth",
@@ -309,7 +387,7 @@ if __name__ == "__main__":
         #"Diff_Exp8_Zero_Q_Run3": "outputs/models/highway_DiffSAC_20260406_095201/diff_sac_ep500.pth",
     }
 
-    # 大样本测试局数，100 局是学术界的黄金免检样本量
+    # 大样本测试局数，100 局是黄金免检样本量
     NUM_EVAL_EPISODES = 100
 
     # ==========================================
@@ -320,13 +398,10 @@ if __name__ == "__main__":
 
     for name in models_to_evaluate.keys():
         if name.startswith("v"):
-            # 提取 v5.0, v6.0
             version_tags.append(name.split('_')[0])
         else:
-            # 提取 Exp1, Exp2, Exp5 等
             version_tags.append(name.split('_')[1])
 
-    # 将提取的标签拼接起来，例如: v5.0_v6.0_Exp1_Exp2_Exp5_Exp6_Exp7_Exp8
     versions_str = "_".join(version_tags)
     eval_run_name = f"eval_[{versions_str}]_{timestamp}"
 
@@ -345,7 +420,7 @@ if __name__ == "__main__":
                 env_name='highway-v0',
                 eval_run_dir=eval_run_dir,
                 num_episodes=NUM_EVAL_EPISODES,
-                expert_data_path=EXPERT_DATA_PATH # 将数据基准传给里面的 Diff 代理
+                expert_data_path=EXPERT_DATA_PATH
             )
             if res:
                 all_results[model_name] = res
