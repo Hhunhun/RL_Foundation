@@ -23,18 +23,18 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from algorithms.sac.sac_agent import SACAgent
-from envs.highway_wrapper import create_highway_env
+from envs import create_environment
 
 
-def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50000, mode=1):
+def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50000, mode=1, test_mode=False, max_steps_per_episode=1000):
     print("\n" + "=" * 60)
     print("🚀 [阶段一] 开始专家轨迹数据采集 (Expert Data Collection)")
-    print(f"📦 目标采集量: {target_transitions} 步 | 当前模式: Mode {mode}")
+    print(f"📦 目标采集量: {target_transitions} 步 | 环境: {env_name} | 当前模式: Mode {mode} {'(测试模式，不过滤碰撞)' if test_mode else ''}")
     print(f"🧠 加载权重: {model_path}")
     print("=" * 60)
 
     # 创建评估模式的环境（is_eval=True 代表关闭训练期那些严苛的惩罚，仅测试纯粹的物理驾驶表现）
-    env = create_highway_env(env_name, is_eval=True)
+    env = create_environment(env_name, is_eval=True, algo="sac")
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
@@ -60,6 +60,7 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
         ep_speeds = [] # 用于 Mode 2 的速度统计
 
         crashed = False
+        ep_steps = 0
 
         while True:
             # 1. 获取专家基准动作 (evaluate=True 表示关闭 SAC 的探索噪声，输出确定性的绝对最优解)
@@ -84,9 +85,10 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             ep_speeds.append(info.get("ego_speed_vx", 0.0))
 
             state = next_state
+            ep_steps += 1
 
             # 如果撞车/出轨(terminated) 或达到最大步数(truncated)，当前局结束
-            if terminated or truncated:
+            if terminated or truncated or ep_steps >= max_steps_per_episode:
                 if terminated:
                     crashed = True
                 break
@@ -95,18 +97,23 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
         mean_speed = np.mean(ep_speeds)
         accept_episode = False
 
-        if mode == 1:
-            # Mode 1 逻辑：只要没撞车就收下
-            if not crashed:
-                accept_episode = True
-            else:
-                reason = "发生碰撞/出界"
-        elif mode == 2:
-            # Mode 2 逻辑：神仙局必须同时满足【不撞车】且【均速 > 22.0】
-            if not crashed and mean_speed > 22.0:
-                accept_episode = True
-            else:
-                reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标"
+        if test_mode:
+            # 测试模式下，不进行任何过滤，直接接受所有数据
+            accept_episode = True
+            reason = "测试模式，强制接受"
+        else:
+            if mode == 1:
+                # Mode 1 逻辑：只要没撞车就收下
+                if not crashed:
+                    accept_episode = True
+                else:
+                    reason = "发生碰撞/出界"
+            elif mode == 2:
+                # Mode 2 逻辑：神仙局必须同时满足【不撞车】且【均速 > 22.0】
+                if not crashed and mean_speed > 22.0:
+                    accept_episode = True
+                else:
+                    reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标"
 
         # 执行数据并入或丢弃
         if accept_episode:
@@ -120,7 +127,7 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
 
             # 实时打印进度条
             progress = min(100.0, (collected_steps / target_transitions) * 100)
-            print(f"\r✅ 进度: [{progress:5.1f}%] | 均速: {mean_speed:.2f} m/s | 已收: {collected_steps}/{target_transitions} 步 | 有效局: {successful_episodes}   ", end="")
+            print(f"\r✅ 进度: [{progress:5.1f}%] | 均速: {mean_speed:.2f} m/s | 已收: {collected_steps}/{target_transitions} 步 | 有效局: {successful_episodes} {'(测试模式)' if test_mode else ''}   ", end="")
         else:
             discarded_episodes += 1
             print(f"\r⚠️ 劣质对局被过滤 ({reason})... (已丢弃 {discarded_episodes} 局)               ", end="")
@@ -133,7 +140,7 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
 
     # 根据采集模式和当前时间生成专属的存档目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_prefix = "dataset_v5_base_" if mode == 1 else "dataset_v6_pro_"
+    dataset_prefix = f"{env_name}_dataset_v5_base_" if mode == 1 else f"{env_name}_dataset_v6_pro_"
     save_dir = os.path.join(PROJECT_ROOT, "data", "expert_data", f"{dataset_prefix}{timestamp}")
     os.makedirs(save_dir, exist_ok=True)
     data_path = os.path.join(save_dir, "expert_transitions.npz")
@@ -158,11 +165,19 @@ if __name__ == "__main__":
     print("[2] 极速神仙局模式 (Mode 2): 使用 v6.0 模型，关闭抖动，严格过滤碰撞且强制要求均速 > 22.0 m/s。(适用破局上限)")
     print("==========================================")
 
+    # 新增：环境选择逻辑
+    print("[H] Highway 环境 (highway-v0)")
+    print("[M] Merge 环境 (merge-v0)")
+    env_choice = input("👉 请选择采集环境 (H 或 M，默认 H): ").strip().upper()
+    target_env = "merge-v0" if env_choice == 'M' else "highway-v0"
+    print("==========================================")
+
     choice = input("👉 请输入采集模式 (1 或 2，默认 1): ").strip()
 
-    # 你刚才提供的 v5.0 和 v6.0 模型相对路径
-    V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", "highway-v0_SAC_20260330_135449", "sac_highway_final.pth")
-    V6_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", "highway-v0_SAC_20260330_213300", "sac_highway_final.pth")
+    # 🚨 注意：如果在上方选择了 M (Merge) 环境，这里必须换成你在 Merge 上专门训练出的 SAC 模型路径！
+    # 否则用 highway 的大脑去开 merge，会一路撞车，数据采集会被无限期拉长且全部是被过滤的劣质局。
+    V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
+    V6_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_213300", "sac_highway_final.pth")
 
     if choice == '2':
         selected_mode = 2
@@ -175,6 +190,6 @@ if __name__ == "__main__":
     TARGET_STEPS = 50000
 
     if os.path.exists(selected_model):
-        collect_expert_data(model_path=selected_model, target_transitions=TARGET_STEPS, mode=selected_mode)
+        collect_expert_data(model_path=selected_model, env_name=target_env, target_transitions=TARGET_STEPS, mode=selected_mode)
     else:
         print(f"\n❌ 找不到指定的权重文件！请确保路径正确: {selected_model}")

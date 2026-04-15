@@ -17,12 +17,12 @@ from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 
 # 导入底层组件
-from envs.highway_wrapper import create_highway_env
+from envs import create_environment
 from core.offline_buffer import MixedReplayBuffer
 from algorithms.diffusion_sac.diff_sac_agent import DiffSACAgent
 
 
-def train_online_diffusion(pretrained_actor_path, expert_data_path, max_episodes=250, batch_size=256, q_weight=0.05, lr=3e-4):
+def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="highway-v0", max_episodes=250, batch_size=256, q_weight=0.05, lr=3e-4, max_steps_per_episode=1000):
     print("=" * 60)
     print("🚀 [阶段三] Diffusion-RL 在线微调 (Demo Augmented RL 专家混合增强版)")
     print("=" * 60)
@@ -31,7 +31,7 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, max_episodes
     print(f"🖥️ 运行设备: {device}")
 
     # 创建平滑版的课程学习环境 (algo="diff" 禁用了导致 Critic 崩溃的极端悬崖惩罚)
-    env = create_highway_env("highway-v0", is_eval=False, algo="diff")
+    env = create_environment(env_name, is_eval=False, algo="diff")
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
 
@@ -49,8 +49,8 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, max_episodes
 
     # --- 日志与存档准备 --- (使用绝对路径构建)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join(PROJECT_ROOT, "outputs", "models", f"highway_DiffSAC_{timestamp}")
-    log_dir = os.path.join(PROJECT_ROOT, "outputs", "logs", f"highway_DiffSAC_{timestamp}")
+    save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", f"DiffSAC_{timestamp}")
+    log_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "logs", f"DiffSAC_{timestamp}")
     os.makedirs(save_dir, exist_ok=True)
 
     writer = SummaryWriter(log_dir=log_dir)
@@ -100,7 +100,7 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, max_episodes
             episode_steps += 1
             total_steps += 1
 
-            if done:
+            if done or episode_steps >= max_steps_per_episode:
                 break
 
         # --- 指标统计与日志记录 ---

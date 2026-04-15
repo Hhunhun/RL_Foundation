@@ -1,63 +1,89 @@
-# RL Foundation: Autonomous Driving Control via SAC and Reward Shaping & Diffusion
+# RL Foundation - 自动驾驶强化学习流水线
 
-## 1. 项目概述 (Project Overview)
-本项目构建了一个基于深度强化学习（Deep Reinforcement Learning, DRL）的自动驾驶规控基准平台（Baseline Framework）。核心算法早期采用连续动作空间的软演员-评论家算法（Soft Actor-Critic, SAC），在 `highway-v0` 仿真环境中进行高速公路多车道交互场景下的变道与速度控制训练。
+本项目是一个高度模块化、自动化的强化学习实验框架，专注于解决自动驾驶场景下的规控问题。目前已完美支持 **Highway (高速巡航)** 与 **Merge (匝道汇入)** 双测试场景，并集成了经典的 **Soft Actor-Critic (SAC)** 算法以及前沿的 **Diffusion-RL (基于扩散模型的强化学习)** 架构。
 
-在确立了纯 RL 的能力边界与安全瓶颈后，本项目目前已正式进入 **生成式强化学习阶段 (Generative RL)**。通过引入条件扩散模型（Conditional Diffusion Models）重构 Actor 网络，并结合专家数据增强（Demo Augmented RL），旨在打破传统反应式单步 RL 在“安全（Safety）与效率（Efficiency）”上的博弈困境。
+## ✨ 核心特性 (Key Features)
 
-## 2. 核心架构与“绝对冻结”评估体系 (Architecture & Evaluation)
-项目不仅包含算法实现，更着重打造了工业级的自动化流水线与公平评估体系：
+- **双重复杂场景支持**: 动态适配 `highway-v0` 与 `merge-v0`，底层环境奖励与平滑约束(Jerk/Steering)高度可配置。
+- **SOTA 算法基座**: 
+  - **SAC (Soft Actor-Critic)**: 用于构建极其稳定的法规级专家底座。
+  - **Diff-SAC (Diffusion-SAC)**: 结合行为克隆(BC)与强化学习微调，突破传统 SAC 的均速与存活率瓶颈。
+- **外科手术式数据蒸馏**: 支持从多个 SAC 专家模型中提取特定流形的数据并进行智能混合，构建神仙级离线数据集。
+- **全自动通宵挂机流水线**: 内置参数矩阵轮询系统，可一键挂机执行数十个消融实验，并在指定时间安全关机。
+- **自动化裁判法庭**: 统一的评估与可视化模块，自动生成学术级箱线图、柱状图与量化指标 CSV，支持双盲公平测试。
+- **工业级防死锁设计**: 针对劣质模型或引擎 Bug 内置完善的超时熔断机制与显存自动回收策略。
 
-* **现代化工程架构**：采用高度解耦的模块化设计，将底层算法 (`algorithms/`)、核心数据流 (`core/`)、子训练循环 (`runners/`) 与顶层调度脚本 (`run_0x...`) 严格分离，支持通宵挂机跑参。
-* **环境包装器 (`envs/highway_wrapper.py`)**：
-  * **训练态 (`is_eval=False`)**：挂载 LQR 二次型转向惩罚、倒车重罚、龟速惩罚等严厉的先验引导奖励，用于解决早期模型钻物理引擎漏洞的问题。
-  * **评估态 (`is_eval=True`)**：**冻结考场机制**。强制剥离所有人工塑形奖励，仅保留最纯净的客观物理碰撞与提速得分，确保所有阶段（SAC 与 Diff-SAC）的模型在同一标尺下进行绝对公平的量化对比。
-* **双线程评估系统 (`run_03_evaluate.py`)**：支持智能路由，自动处理 Diffusion 模型的归一化数据流。分离视频录制（定性分析）与大样本全速蒙特卡洛统计（定量分析），自动计算存活率、均速、策略标准差，并一键输出学术级对比图表。
+## 📁 项目架构 (Project Structure)
 
-## 3. 策略演进与纯 RL 消融实验 (RL Ablation Study)
-本项目完整记录了 6 个大版本的传统 RL 迭代历史，揭示了传统 RL 的核心痛点：
+```text
+RL_Foundation/
+├── run_00_quick_test.py            # [测试] 全链路冒烟测试脚本 (一分钟验证代码健壮性)
+├── run_01_collect_data.py          # [阶段一] 专家轨迹数据采集模块 (支持抖动增强与纯净模式)
+├── run_02_train_pipeline.py        # [阶段二/三] 核心自动化训练调度器 (含通宵扫参模式)
+├── run_03_evaluate.py              # [阶段四] 统一模型评估与可视化流水线
+│
+├── baseline_sac/                   # SAC 专家基线训练器 (分别对应 Highway 和 Merge)
+│   ├── main_highway.py
+│   └── main_merge.py
+│
+├── envs/                           # 环境工厂与包装器定义 (Environment Factory)
+│   ├── __init__.py                 # 动态环境路由
+│   ├── highway_wrapper.py          # 高速环境奖励塑形与状态展平
+│   └── merge_wrapper.py            # 汇入环境奖励塑形 (包含底层源码缺陷修复补丁)
+│
+├── algorithms/                     # 算法大脑模块
+│   ├── sac/                        # 经典 SAC 实现
+│   └── diffusion_sac/              # 结合条件扩散模型的 Diff-SAC 实现
+│
+├── runners/                        # 子训练管线执行器
+│   ├── train_offline_bc.py         # 纯离线扩散模型行为克隆 (Offline BC)
+│   └── train_online_diff.py        # 在线真实环境强化学习微调 (Online RL Finetune)
+│
+├── core/                           # 核心基础组件
+│   ├── replay_buffer.py            # 基础经验回放池
+│   └── offline_buffer.py           # 混合经验回放池 (含在线/离线双区管理与数据归一化)
+│
+├── data/expert_data/               # [产出] 存放各环境采集的高质量专家数据集 (.npz)
+└── outputs/                        # [产出] 实验结果分类归档
+    ├── highway-v0/
+    │   ├── logs/                   # TensorBoard 训练日志
+    │   ├── models/                 # 网络权重文件 (.pth)
+    │   ├── eval_results/           # 评估生成的图表、CSV 数据
+    │   └── videos/                 # 评估生成的自动驾驶录像 (.mp4)
+    └── merge-v0/                   # 同上，环境严格隔离
+```
 
-| 版本 (Version) | 核心约束机制 | 纯净考场实战表现 (Objective KPI) | 工程诊断与病理分析 |
-| :--- | :--- | :--- | :--- |
-| **v1.0 & v2.0** | 早期无约束或轻度线性约束 | 存活率 ~80%，均速 ~21m/s | 表现出疯狂原地摆头（Wobbling）和越野作弊，缺乏横向稳定性。 |
-| **v3.0** | 引入 LQR 惩罚与出界死刑 | 存活率 **6.7%**，均速 25.6m/s | 极低容错率导致正向样本匮乏，模型产生严重欠拟合。 |
-| **v4.0** | 改为 40k 总步数制训练 | - | 演化出极其危险的倒车苟活（Reverse Hacking）以规避转向惩罚。 |
-| **v5.0<br>(Safe Baseline)** | **LQR + 绝对禁止倒车** | 存活率 **80%+**，均速 **~21.5m/s** | 传统 RL 最稳健状态，但陷入**局部最优**。为了极高安全性选择不敢超车的“保守策略”。 |
-| **v6.0<br>(Efficiency Pro)** | **v5.0 + 绝对转向约束 + 严惩龟速** | 存活率 **<80%**，均速 **~22.5m/s** | 强行逼迫提速导致容错率急剧下降，揭示了单步 RL 在**安全与效率间的不可调和性**。 |
+## 🚀 标准工作流 (Workflow)
 
-## 4. 扩散网络架构升级 (Diffusion-RL Framework)
-综合上述数据，本项目确立 v5.0 为保守型专家基线，并在此基础上构建了全新的 **Diffusion-SAC** 混合架构，成功实现了从端到端 RL 向扩散生成控制的跨越：
-
-* **Phase 1: 专家数据采集与清洗 (`run_01_collect_data.py`)**
-  利用 v5.0 专家模型在纯净环境中运行。引入**概率性行为抖动 (Behavioral Jitter)** 强制专家展示纠偏动作，并严格丢弃任何包含撞车的瑕疵局，最终提取 50,000 步极其纯净的数据作为安全底座。
-* **Phase 2: 离线行为克隆 (`runners/train_offline_bc.py`)**
-  构建基于 Mish 激活函数和正弦位置编码的 Conditional Actor。在不接触真实环境的前提下，通过加噪/去噪过程让网络死记硬背专家的安全驾驶流形 (Manifold)。
-* **Phase 3: 非对称掩码在线强化学习 (`runners/train_online_diff.py` & `diff_sac_agent.py`)**
-  架构的核心突破点。在环境微调阶段，解决了分布偏移 (OOD) 与模型崩溃问题：
-  1. **非对称更新掩码 (Asymmetric Masking)**：Actor 被严格限制只能克隆专家数据（禁止模仿自己探索时的撞车动作），但 Critic 评估全局数据（好坏经验兼收），实现“不忘本的创新”。
-  2. **双重防爆装甲**：为 Critic 部署了 Reward Clipping (-10~10) 和 Huber Loss，防止严苛自动驾驶环境下的梯度爆炸。
-  3. **100% EMA 权重同步**：修复了评估阶段影子网络随机化导致的 0% 存活率漏洞，保障了推理阶段动作的极度平滑。
-
-## 5. 扩散混合架构大样本消融实验 (Diffusion-SAC Ablation Matrix)
-为了彻底探明扩散生成模型在连续控制任务中的能力边界与物理特性，本项目开展了横跨 4 个阶段、共计 16 组的超大规模消融实验（每组均经历纯净考场 100 局的大样本量化评估）。
-
-实验揭示了 Diffusion-RL 架构中的三大核心物理规律：
-1. **分布偏移与过估计陷阱 (The OOD Trap)**：传统的标准 RL 引导权重（如 `q=0.05` 或 `0.10`）会瞬间摧毁扩散网络在预训练中建立的安全流形，导致 Actor 动作发散与严重的碰撞崩溃。
-2. **“冰封微调”的过拟合假象 (The Overfitting Illusion)**：企图使用极低学习率（如 `lr=5e-5`）来抑制高方差是无效的。这会导致严重的“应试型过拟合”，训练曲线完美，但在完全随机的评估交通流中存活率跌破 50%。
-3. **“黄金融合”破局点 (The Sweet Spot)**：必须维持标准学习率（确保泛化弹性），并将 RL 引导权重压缩至极微水平（如 `q=0.001`）。
-
-**核心演进路线与最终 SOTA 锁定：**
-
-| 实验期数 | 核心探索目标 | 代表性实验与参数设置 | 纯净考场实战评估结论 |
-| :--- | :--- | :--- | :--- |
-| **Phase 1<br>试探边界** | 探明强化学习引导权重 (`q_weight`) 的安全阈值 | `Exp_3` (q=0.10, 强力引导)<br>`Exp_1` (q=0.01, 微弱引导) | 强力引导导致 0% 存活率崩溃；微弱引导表现优异，初步证明极微弱 RL 的必要性。 |
-| **Phase 2<br>防爆装甲** | 测试极低学习率微调与纯 BC 底座的抗压性 | `Exp_7` (q=0.005, lr=5e-5)<br>`Exp_8` (q=0.0, 纯 BC) | 极低学习率导致考场翻车；彻底关闭 Q 引导 (`q=0.0`) 的纯 BC 展现出极高下限，成为黄金对照组。 |
-| **Phase 3<br>深挖极限** | 在标准学习率下探索微丝引导的理论上限 | `Exp_11` (q=0.001, lr=3e-4) | 全场最佳 Pareto 前沿点。极微丝引导成功在不破坏 BC 安全护城河的前提下，拉升了均速。 |
-| **Phase 4<br>黄金融合** | 结合最优装甲与最锐利刃，冲击最终天花板 | `Exp_13` (BC=120, q=0.001)<br>`Exp_14` (BC=120, q=0.01) | **SOTA 候选者。** 利用 120 轮超厚预训练刻印终极安全底座，配合标准学习率与微弱引导，彻底打破安全与效率的博弈魔咒。 |
-
-*注：所有量化指标（Survival Rate, Mean Reward, Mean Speed）的大样本对比图表均由 `run_03_evaluate.py` 自动生成至 `outputs/eval_results/` 目录下。*
-## 6. 快速开始 (Quick Start)
-
-### 依赖安装
+### 1. 验证系统健壮性
+每次修改底层代码后，请务必先运行冒烟测试：
 ```bash
-pip install torch numpy gymnasium highway-env tensorboard matplotlib pandas
+python run_00_quick_test.py
+```
+该脚本将在极短时间内验证所有环境与算法的连通性，预期输出全绿 `ALL PASSED`。
+
+### 2. 训练特定环境的 SAC 专家
+以 Merge 环境为例，进入 `baseline_sac` 调整实验参数并训练：
+```bash
+python baseline_sac/main_merge.py
+```
+
+### 3. 采集高质量专家数据
+运行数据采集脚本，选择对应的环境与模式：
+```bash
+python run_01_collect_data.py
+```
+
+### 4. 启动自动化实验流水线
+修改 `run_02_train_pipeline.py` 中的 `experiment_configs` 参数矩阵，然后运行：
+```bash
+python run_02_train_pipeline.py
+```
+推荐选择 `[2] OVERNIGHT` 模式，设定次日早晨为截止时间，让显卡通宵完成消融实验。
+
+### 5. 统一评估与出图
+通宵结束后，运行评估脚本，自动生成对比图表：
+```bash
+python run_03_evaluate.py
+```
+生成的报告及图表可在 `outputs/{env_name}/eval_results/` 目录下查看。

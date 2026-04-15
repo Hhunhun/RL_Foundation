@@ -63,6 +63,23 @@ def get_user_configuration():
         else:
             print("⚠️ 输入无效，请按 0, 1 或 2 进行选择。")
 
+    print("\n" + "-" * 60)
+    print("请选择目标训练环境:")
+    print("  [H] Highway 环境 (highway-v0)")
+    print("  [M] Merge 环境 (merge-v0)")
+    
+    target_env = None
+    while True:
+        env_choice = input("👉 请输入选择 (H 或 M，默认 H): ").strip().upper()
+        if env_choice == 'M':
+            target_env = "merge-v0"
+            break
+        elif env_choice == 'H' or env_choice == '':
+            target_env = "highway-v0"
+            break
+        else:
+            print("⚠️ 输入无效，请按 H 或 M 进行选择。")
+
     target_time = None
     if run_mode == "OVERNIGHT":
         print("\n" + "-" * 60)
@@ -81,25 +98,32 @@ def get_user_configuration():
             except ValueError:
                 print("⚠️ 时间格式解析失败！请严格按照 YYYY-MM-DD HH:MM 格式输入 (注意空格和横杠)。")
 
-    return run_mode, target_time
+    return run_mode, target_time, target_env
 
 
 if __name__ == "__main__":
     # ==========================================
     # ⚙️ 终端交互与基础全局配置
     # ==========================================
-    RUN_MODE, TARGET_END_TIME = get_user_configuration()
+    RUN_MODE, TARGET_END_TIME, TARGET_ENV = get_user_configuration()
 
     # 全局数据路径配置 (控制是否复用之前辛苦跑出来的专家数据)
     REUSE_DATA = True
 
-    # 🚨 修复：使用 os.path.join 和 PROJECT_ROOT 构建绝对路径
-    #EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "dataset_v5_20260404_035105", "expert_transitions.npz")
-    V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "models", "highway-v0_SAC_20260330_135449", "sac_highway_final.pth")
-
-    # 🚨 进阶：将专家数据路径指向昨天跑出的“v5+v6 混合数据集”
-    EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT,"data","expert_data","dataset_mixed_80_20_20260410_031547", "expert_transitions_mixed_80_20.npz")
-
+    # 🚨 动态配置：根据选择的环境切换专家模型和数据集路径
+    # 🚨🚨🚨 重要：请在应用新的文件夹结构后，手动更新以下 V5_MODEL_PATH 和 EXPERT_DATA_PATH 的值！
+    # 它们需要指向新结构下的正确路径，例如：
+    # outputs/merge-v0/models/SAC_YYYYMMDD_HHMMSS/sac_merge_final.pth
+    # data/expert_data/merge-v0_dataset_v5_base_YYYYMMDD_HHMMSS/expert_transitions.npz
+    if TARGET_ENV == "merge-v0":
+        # 示例：请替换为你在 merge-v0 环境下训练的 SAC 专家模型路径
+        V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "YOUR_MERGE_SAC_DIR", "sac_merge_final.pth")
+        # 示例：请替换为你在 merge-v0 环境下采集的专家数据路径
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "YOUR_MERGE_DATASET_DIR", "expert_transitions.npz")
+    else:
+        # Highway 环境默认路径
+        V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT,"data","expert_data","dataset_smart_mixed_90_10_20260413_031136", "expert_transitions_smart_90_10.npz")
     # ==========================================
     # 1. 统一的数据流准备 (Data Preparation)
     # ==========================================
@@ -113,7 +137,7 @@ if __name__ == "__main__":
         # 如果没有历史数据，就现场召唤 SAC 专家跑出 5 万步的数据集
         data_path = collect_expert_data(
             model_path=V5_MODEL_PATH,
-            env_name="highway-v0",
+            env_name=TARGET_ENV,
             target_transitions=50000
         )
     clear_gpu_memory()
@@ -138,6 +162,7 @@ if __name__ == "__main__":
         # 测试离线预训练管线
         pretrained_model_path = train_diffusion_bc(
             data_path=data_path,
+            env_name=TARGET_ENV,
             num_epochs=smoke_config["bc_epochs"],
             batch_size=256,
             learning_rate=smoke_config["lr"]
@@ -148,6 +173,7 @@ if __name__ == "__main__":
         train_online_diffusion(
             pretrained_actor_path=pretrained_model_path,
             expert_data_path=data_path,
+            env_name=TARGET_ENV,
             max_episodes=smoke_config["episodes"],
             batch_size=256,
             q_weight=smoke_config["q_weight"],
@@ -176,6 +202,7 @@ if __name__ == "__main__":
         # 执行离线 BC
         pretrained_model_path = train_diffusion_bc(
             data_path=data_path,
+            env_name=TARGET_ENV,
             num_epochs=single_config["bc_epochs"],
             batch_size=256,
             learning_rate=single_config["lr"]
@@ -186,6 +213,7 @@ if __name__ == "__main__":
         train_online_diffusion(
             pretrained_actor_path=pretrained_model_path,
             expert_data_path=data_path,
+            env_name=TARGET_ENV,
             max_episodes=single_config["episodes"],
             batch_size=256,
             q_weight=single_config["q_weight"],
@@ -301,17 +329,17 @@ if __name__ == "__main__":
             # 实验组 17: 纯混合克隆基准 (Mixed BC Control)
             # 对应之前的 Exp_8。完全关闭 Q 引导 (q=0.0)。
             # 这是极其关键的基准线！我们要看仅仅是“喂了更好的数据”，模型纯靠模仿，能否在速度上超越以前的 Exp_8。
-            #{"name": "Exp_17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            {"name": "Exp_17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
 
             # 实验组 18: 混合流形冠军 (Mixed Ultra-Micro Q)
             # 对应之前的全场最佳 Exp_11。
             # 这是我们冲击最终 SOTA 的主力军！看看在混合神仙数据的加持下，0.001 的微弱提速能否完美兑现。
-            #{"name": "Exp_18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            {"name": "Exp_18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
 
             # 实验组 19: 数据容量扩充测试 (Mixed Thicker Base)
             # 这是一个新策略！因为混合数据集包含了“减速”和“极速”两种互相矛盾的动作，流形变复杂了。
             # 50 轮预训练可能背不过这么复杂的规律，所以我们把底座适度加厚到 80 轮（但避开 120 轮的死板陷阱）。
-            #{"name": "Exp_19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            {"name": "Exp_19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
 
             # 实验组 20: 混合马拉松 (Mixed Marathon)
             # 对应之前的 Exp_16。
@@ -341,6 +369,7 @@ if __name__ == "__main__":
             # 执行该组参数的离线 BC
             pretrained_model_path = train_diffusion_bc(
                 data_path=data_path,
+                env_name=TARGET_ENV,
                 num_epochs=config["bc_epochs"],
                 batch_size=256,
                 learning_rate=config["lr"]
@@ -351,6 +380,7 @@ if __name__ == "__main__":
             train_online_diffusion(
                 pretrained_actor_path=pretrained_model_path,
                 expert_data_path=data_path,
+                env_name=TARGET_ENV,
                 max_episodes=config["episodes"],
                 batch_size=256,
                 q_weight=config["q_weight"],

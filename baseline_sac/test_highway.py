@@ -9,7 +9,7 @@ from algorithms.sac.sac_agent import SACAgent
 from envs.highway_wrapper import create_highway_env
 
 
-def get_latest_model_path(base_path="outputs/models"):
+def get_latest_model_path(base_path="../outputs/highway-v0/models"):
     """[自动寻路系统] 保留原注释，寻找最新权重。"""
     if not os.path.exists(base_path):
         raise FileNotFoundError(f"找不到基础模型目录: {base_path}")
@@ -37,7 +37,7 @@ def main():
     # 动态视频存储路径对齐 (保留原规范)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_run_name = f"{env_name}_{algo_name}_eval_{timestamp}"
-    video_dir = os.path.join("../outputs", "videos", video_run_name)
+    video_dir = os.path.join("../outputs", env_name, "videos", video_run_name)
     os.makedirs(video_dir, exist_ok=True)
 
     # 录制包装器

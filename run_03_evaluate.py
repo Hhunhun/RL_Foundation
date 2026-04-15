@@ -32,29 +32,32 @@ from gymnasium.wrappers import RecordVideo
 from algorithms.sac.sac_agent import SACAgent
 from algorithms.diffusion_sac.diff_sac_agent import DiffSACAgent
 from core.offline_buffer import MixedReplayBuffer
-from envs.highway_wrapper import create_highway_env
+from envs import create_environment
 
 # 统一设置中文字体，防止 matplotlib 画图时出现乱码 (针对 Windows 系统)
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 
-def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_episodes=100, record_video=True, expert_data_path=None):
+def evaluate_single_model(model_id, model_path, display_label, env_name, eval_run_dir, num_episodes=100, record_video=True, expert_data_path=None, max_steps_per_episode=1000):
     """
     对单个模型进行双线程评估：定性录像 (防崩溃) + 定量统计 (出数据)。
     包含智能路由逻辑：根据模型名称自动选择加载 SAC 还是 Diffusion 网络。
     """
     print(f"\n" + "=" * 60)
-    print(f"🚀 开始公平评估模型: [{model_name}] | 测试回合数: {num_episodes}")
-    print(f"📁 权重路径: {model_path}")
+    print(f" 开始公平评估模型: [{display_label}] (ID: {model_id}) | 测试回合数: {num_episodes}")
+    print(f"📁 权重路径: {os.path.abspath(model_path)}")
     print("=" * 60)
 
     # 智能路由判定：如果名字里带 diff，就走扩散模型那套复杂的处理逻辑
-    is_diff = "Diff" in model_name or "diff" in model_name
+    is_diff = "Diff" in model_id or "diff" in model_id
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # 🚨 核心改造：根据模型类型和评估模式，动态选择算法包装器
+    algo_type = "diff" if "Diff" in model_id or "diff" in model_id else "sac" # 使用 model_id 来判断算法类型
+
     # 1. 探针环境：开一个临时的环境，仅仅是为了读取状态和动作的维度
-    dummy_env = create_highway_env(env_name, is_eval=True)
+    dummy_env = create_environment(env_name, is_eval=True, algo=algo_type)
     state_dim = dummy_env.observation_space.shape[0]
     action_dim = dummy_env.action_space.shape[0]
     max_action = float(dummy_env.action_space.high[0])
@@ -62,7 +65,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
 
     # 2. 根据模型类型加载大脑
     if is_diff:
-        print("🧠 检测到 Diffusion 架构，正在挂载 DiffSACAgent 与数据归一化器...")
+        print(f"🧠 检测到 Diffusion 架构 ({model_id})，正在挂载 DiffSACAgent 与数据归一化器...")
         # Diffusion 模型极其依赖数据归一化。我们通过传入专家数据，建立统一的归一化基准
         buffer = MixedReplayBuffer(expert_data_path=expert_data_path, max_online_size=10, device=device)
         agent = DiffSACAgent(state_dim, action_dim, device=device)
@@ -74,24 +77,24 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
         agent.ema_actor.model.load_state_dict(agent.actor.state_dict())
         print("🔧 EMA 权重 100% 同步修复完成，解除随机驾驶锁定！")
 
-    else:
-        print("🧠 检测到 SAC 架构，正在挂载经典 SACAgent...")
+    else: # SAC 架构
+        print(f"🧠 检测到 SAC 架构 ({model_id})，正在挂载经典 SACAgent...")
         agent = SACAgent(state_dim, action_dim, action_scale=max_action)
         try:
-            agent.load_model(model_path)
+            agent.load_model(model_path) # SACAgent 的 load_model 接受路径
         except Exception as e:
-            print(f"❌ 加载模型 {model_name} 失败: {e}")
+            print(f"❌ 加载模型 {display_label} 失败: {e}")
             return None
 
     # ==========================================
     # 阶段一：纯粹的视频录制定性环节 (仅录制前 2 局)
     # ==========================================
     if record_video:
-        print(f"🎬 [阶段 1] 正在为 {model_name} 录制实战视频 (前 2 局)...")
-        env_video = create_highway_env(env_name, is_eval=True)
-        video_dir = os.path.join(eval_run_dir, "videos", model_name)
+        print(f"🎬 [阶段 1] 正在为 [{display_label}] 录制实战视频 (前 2 局)...")
+        env_video = create_environment(env_name, is_eval=True, algo=algo_type)
+        video_dir = os.path.join(eval_run_dir, "videos") # Simplified: model_name will be in the video file name
         os.makedirs(video_dir, exist_ok=True)
-        env_video = RecordVideo(env_video, video_folder=video_dir, name_prefix=f"{model_name}_eval")
+        env_video = RecordVideo(env_video, video_folder=video_dir, name_prefix=f"{display_label.replace(' ', '_')}_eval") # 使用 display_label 作为视频前缀
 
         for ep in range(2):
             state, _ = env_video.reset()
@@ -121,7 +124,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
     # 阶段二：最高速的大样本定量评估环节
     # ==========================================
     print(f"\n⚡ [阶段 2] 执行 {num_episodes} 局大样本闭门测试...")
-    env_eval = create_highway_env(env_name, is_eval=True) # 再次确认开启纯净评估模式
+    env_eval = create_environment(env_name, is_eval=True, algo=algo_type) # 再次确认开启纯净评估模式
     metrics = {'rewards': [], 'lengths': [], 'speeds': [], 'crashes': 0}
 
     for ep in range(num_episodes):
@@ -142,7 +145,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
             ep_steps += 1
             ep_speeds.append(info.get("ego_speed_vx", 0.0))
 
-            if terminated or truncated:
+            if terminated or truncated or ep_steps >= max_steps_per_episode:
                 metrics['rewards'].append(ep_reward)
                 metrics['lengths'].append(ep_steps)
                 metrics['speeds'].append(np.mean(ep_speeds))
@@ -163,7 +166,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
         'raw_rewards': metrics['rewards']
     }
 
-    print(f"\n📊 [{model_name}] 评估报告:")
+    print(f"\n📊 [{display_label}] 评估报告:")
     print(f"   平均累计奖励: {results['mean_reward']:.2f} ± {results['std_reward']:.2f}")
     print(f"   存活率(完赛率): {results['survival_rate']:.1f}%")
     print(f"   平均车速: {results['mean_speed']:.2f} m/s")
@@ -171,7 +174,7 @@ def evaluate_single_model(model_name, model_path, env_name, eval_run_dir, num_ep
     return results
 
 
-def save_metrics_to_csv(all_results, save_dir):
+def save_metrics_to_csv(all_results, models_to_evaluate, save_dir):
     """
     将量化指标保存为 CSV 文件，便于论文表格制作。
     """
@@ -183,36 +186,38 @@ def save_metrics_to_csv(all_results, save_dir):
     with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
-        for model_name, res in all_results.items():
-            writer.writerow([model_name, f"{res['mean_reward']:.2f}", f"{res['std_reward']:.2f}",
+        for model_id, res in all_results.items():
+            display_label = models_to_evaluate[model_id]["display_name"] # 从原始配置中获取 display_name
+            writer.writerow([display_label, f"{res['mean_reward']:.2f}", f"{res['std_reward']:.2f}",
                              f"{res['survival_rate']:.1f}", f"{res['mean_speed']:.2f}"])
     print(f"\n💾 量化指标数据已保存至 CSV: {os.path.abspath(csv_path)}")
 
 
-def plot_comparisons(all_results, save_dir):
+def plot_comparisons(all_results, models_to_evaluate, save_dir):
     """
     自动生成学术级对比箱线图和柱状图。
     包含四张核心图表：回报箱线图、策略方差柱状图、存活率柱状图、均速柱状图。
     """
     os.makedirs(save_dir, exist_ok=True)
-    models = list(all_results.keys())
-    colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
+    model_ids = list(all_results.keys())
+    display_labels = [models_to_evaluate[mid]["display_name"] for mid in model_ids]
+    colors = plt.cm.tab10(np.linspace(0, 1, len(model_ids)))
 
     # ----------------------------------------------------
     # 图 1：累计奖励箱线图 (新增均值文本标注)
     # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
-    reward_data = [all_results[m]['raw_rewards'] for m in models]
+    reward_data = [all_results[mid]['raw_rewards'] for mid in model_ids]
     # showfliers=False 会隐藏离群点，使得主流分布清晰可见
-    plt.boxplot(reward_data, labels=models, showmeans=True, showfliers=False)
+    plt.boxplot(reward_data, labels=display_labels, showmeans=True, showfliers=False) # 使用 display_labels
     plt.title('规控策略演进与消融实验对比 (Cumulative Reward)', fontsize=14, fontweight='bold')
     plt.ylabel('Episode Reward (Outliers Hidden)', fontsize=12)
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.7)
 
     # 🆕 新增：在绿色均值三角形旁边标注具体的数值
-    means = [all_results[m]['mean_reward'] for m in models]
-    for i, mean_val in enumerate(means):
+    means = [all_results[m]['mean_reward'] for m in model_ids]
+    for i, mean_val in enumerate(means): # 这里的 models 应该改为 model_ids
         # i + 1 是因为 boxplot 的 x 轴刻度是从 1 开始的
         plt.text(i + 1.05, mean_val, f'{mean_val:.1f}', va='center', ha='left',
                  color='green', fontsize=10, fontweight='bold')
@@ -225,9 +230,9 @@ def plot_comparisons(all_results, save_dir):
     # 🆕 图 2：策略方差/标准差柱状图 (越低代表模型越稳定)
     # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
-    std_rewards = [all_results[m]['std_reward'] for m in models]
-    bars_std = plt.bar(models, std_rewards, color=colors, alpha=0.8)
-    plt.title('规控策略稳定性对比 (Standard Deviation of Reward)', fontsize=14, fontweight='bold')
+    std_rewards = [all_results[m]['std_reward'] for m in model_ids]
+    bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=0.8) # 使用 display_labels
+    plt.title('规控策略稳定性对比 (Standard Deviation of Reward)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Reward Std. Dev (Lower is Better)', fontsize=12)
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.3)
@@ -245,9 +250,9 @@ def plot_comparisons(all_results, save_dir):
     # 图 3：存活率柱状图
     # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
-    survival_rates = [all_results[m]['survival_rate'] for m in models]
-    bars_surv = plt.bar(models, survival_rates, color=colors, alpha=0.9)
-    plt.title('规控策略存活率对比 (Survival Rate)', fontsize=14, fontweight='bold')
+    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
+    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=0.9) # 使用 display_labels
+    plt.title('规控策略存活率对比 (Survival Rate)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Survival Rate (%)', fontsize=12)
     plt.ylim(0, 105)
     plt.xticks(rotation=25, ha='right')
@@ -266,9 +271,9 @@ def plot_comparisons(all_results, save_dir):
     # 🆕 图 4：平均纵向速度柱状图 (Y 轴特意从 20 开始，放大差异)
     # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
-    mean_speeds = [all_results[m]['mean_speed'] for m in models]
-    bars_speed = plt.bar(models, mean_speeds, color=colors, alpha=0.8)
-    plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)', fontsize=14, fontweight='bold')
+    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
+    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=0.8) # 使用 display_labels
+    plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Mean Speed (m/s)', fontsize=12)
 
     # 动态设定 Y 轴下限：高速公路场景速度下限设为 20 能更清晰地看出突破
@@ -292,100 +297,132 @@ def plot_comparisons(all_results, save_dir):
 
 
 if __name__ == "__main__":
-    # 🚨 Diff-SAC 需要依赖专家数据来统一尺度，填写你的专家数据集路径
-    EXPERT_DATA_PATH = "data/expert_data/dataset_v5_20260404_035105/expert_transitions.npz"
+    # ==========================================
+    # 终端交互：选择评估环境
+    # ==========================================
+    print("🤖 欢迎使用统一模型评估终端")
+    print("==========================================")
+    print("[H] Highway 环境 (highway-v0)")
+    print("[M] Merge 环境 (merge-v0)")
+    env_choice = input("👉 请选择评估环境 (H 或 M，默认 H): ").strip().upper()
+    TARGET_ENV = "merge-v0" if env_choice == 'M' else "highway-v0"
+    print(f"✅ 已锁定评估环境: {TARGET_ENV}")
+    print("==========================================")
 
     # ==========================================
     # 实验配置区：模型演进与消融实验大乱斗
     # ==========================================
-    models_to_evaluate = {
+    # 🚨 动态配置：根据选择的环境切换专家数据集和待评估模型列表
+    if TARGET_ENV == "merge-v0":
+        # 🚨 注意：请将这里的路径替换为您真实的 merge 专家数据和模型路径！
+        EXPERT_DATA_PATH = "data/expert_data/YOUR_MERGE_DATASET_DIR/expert_transitions.npz"
+        models_to_evaluate = { # 新结构
+            "Merge_SAC_Expert": {"path": "outputs/models/YOUR_MERGE_SAC_DIR/sac_merge_final.pth", "display_name": "Merge SAC 专家"},
+            "Merge_DiffSAC_SOTA": {"path": "outputs/models/YOUR_MERGE_DIFFSAC_DIR/diff_sac_epXXX.pth", "display_name": "Merge DiffSAC SOTA"},
+        }
+    else: # highway-v0
+        EXPERT_DATA_PATH = "data/expert_data/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
+        models_to_evaluate = { # 新结构
         # v1.0: 没有任何约束，表现为“原地发癫”和“极度胆小”
-        #"v1.0_Unconstrained": "outputs/models/highway-v0_SAC_20260329_150543/sac_highway_final.pth",
+        #"SAC_v1": {"path": "outputs/models/highway-v0_SAC_20260329_150543/sac_highway_final.pth", "display_name": "v1.0 无约束 SAC"},
 
         # v2.0: 强化了速度奖励但没关草地，表现为“草地飙车党”
-        #"v2.0_Offroad_Hacker": "outputs/models/highway-v0_SAC_20260329_185751/sac_highway_final.pth",
+        #"SAC_v2": {"path": "outputs/models/highway-v0_SAC_20260329_185751/sac_highway_final.pth", "display_name": "v2.0 越野飙车 SAC"},
 
         # v3.0: 开启了草地死刑和LQR惩罚，但因局数制导致“严重欠拟合/早产”
-        #"v3.0_LQR_Underfit": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth",
+        #"SAC_v3": {"path": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth", "display_name": "v3.0 LQR 欠拟合 SAC"},
 
         # v5.0: 锁死了倒车和草地，并练够12万步，表现为求稳的“法规级专家”
-        "v5.0_Safety_Conservative": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth",
+        "SAC_v5": {"path": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth", "display_name": "v5.0 安全保守 SAC"},
 
         # v6.0: 引入绝对转向约束和高速重塑，表现为敢踩油门的“高效超车专家”
-        "v6.0_Efficiency_Pro": "outputs/models/highway-v0_SAC_20260330_213300/sac_highway_final.pth",
+        #"SAC_v6": {"path": "outputs/models/highway-v0_SAC_20260330_213300/sac_highway_final.pth", "display_name": "v6.0 高效超车 SAC"},
 
         # Diff-Exp1: 微弱 Q 引导 (q=0.01)，高度依赖专家先验，理论上的“无冕之王/最稳老司机”
-        #"Diff_Exp1_Gentle_Q": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth",
+        #"Diff_Exp1": {"path": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "Diff-Exp1 微弱 Q 引导"},
 
         # Diff-Exp2: 标准 Q 引导 (q=0.05)，模仿与自主探索的平衡，偶尔会在超车时发生失误
-        #"Diff_Exp2_Standard_Q": "outputs/models/highway_DiffSAC_20260405_065603/diff_sac_ep400.pth",
+        #"Diff_Exp2": {"path": "outputs/models/highway_DiffSAC_20260405_065603/diff_sac_ep400.pth", "display_name": "Diff-Exp2 标准 Q 引导"},
 
         # Diff-Exp3: 强力 Q 引导 (q=0.10)，完全陷入过估计陷阱，表现为“理论满分，实操零分”的翻车司机
-        #"Diff_Exp3_Strong_Q": "outputs/models/highway_DiffSAC_20260405_101704/diff_sac_ep400.pth",
+        #"Diff_Exp3": {"path": "outputs/models/highway_DiffSAC_20260405_101704/diff_sac_ep400.pth", "display_name": "Diff-Exp3 强力 Q 引导"},
 
         # Diff-Exp4: 降学习率长跑 (lr=1e-4)，企图驯服高方差，但依然未能逃脱 OOD 陷阱
-        #"Diff_Exp4_Stable_Long": "outputs/models/highway_DiffSAC_20260405_141352/diff_sac_ep500.pth",
+        #"Diff_Exp4": {"path": "outputs/models/highway_DiffSAC_20260405_141352/diff_sac_ep500.pth", "display_name": "Diff-Exp4 降学习率长跑"},
 
         # Diff-Exp5: 极微引导 (q=0.005)，大幅削弱 RL 话语权，成功将 Actor 拉回安全边界，表现为“试探边界的行者”
-        #"Diff_Exp5_Micro_Q": "outputs/models/highway_DiffSAC_20260406_023023/diff_sac_ep400.pth",
+        #"Diff_Exp5": {"path": "outputs/models/highway_DiffSAC_20260406_023023/diff_sac_ep400.pth", "display_name": "Diff-Exp5 极微引导"},
 
         # Diff-Exp6: 铁壁底座 (bc_epochs=120, q=0.05)，企图用超长预训练对抗分布偏移，但安全底线依然被 RL 粉碎的“反面教材”
-        #"Diff_Exp6_Bulletproof_BC": "outputs/models/highway_DiffSAC_20260406_040052/diff_sac_ep400.pth",
+        #"Diff_Exp6": {"path": "outputs/models/highway_DiffSAC_20260406_040052/diff_sac_ep400.pth", "display_name": "Diff-Exp6 铁壁底座"},
 
         # Diff-Exp7: 冰封微调 (q=0.005, lr=5e-5)，通过极致的保守实现安全与效率的完美平衡，理论上的“SOTA 冠军候选人”
-        #"Diff_Exp7_Frozen_Finetune": "outputs/models/highway_DiffSAC_20260406_052938/diff_sac_ep500.pth",
+        #"Diff_Exp7": {"path": "outputs/models/highway_DiffSAC_20260406_052938/diff_sac_ep500.pth", "display_name": "Diff-Exp7 冰封微调"},
 
         # Diff-Exp8: 零引导对照组 (q=0.0)，彻底关闭 Critic，退化为纯行为克隆的“循规蹈矩模仿者”，用于证明 RL 的必要性
-        "Diff_Exp8_Zero_Q_Control": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth",
+        #"Diff_Exp8": {"path": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth", "display_name": "Diff-Exp8 零引导对照"},
 
         # Diff-Exp9: 终极防御底座 (bc=120, q=0.005, lr=5e-5)，结合最厚装甲与最温柔微调，成功压制了在线微调初期的震荡
-        #"Diff_Exp9_Ultimate_Safe_SOTA": "outputs/models/highway_DiffSAC_20260406_153903/diff_sac_ep500.pth",
+        #"Diff_Exp9": {"path": "outputs/models/highway_DiffSAC_20260406_153903/diff_sac_ep500.pth", "display_name": "Diff-Exp9 终极防御底座"},
 
         # Diff-Exp10: 加速冰封 (q=0.005, lr=1e-4)，在微弱引导下适度提升学习率，在保证不崩溃的前提下提升了环境适应效率
-        #"Diff_Exp10_Accelerated_Finetune": "outputs/models/highway_DiffSAC_20260406_172128/diff_sac_ep500.pth",
+        #"Diff_Exp10": {"path": "outputs/models/highway_DiffSAC_20260406_172128/diff_sac_ep500.pth", "display_name": "Diff-Exp10 加速冰封"},
 
         # Diff-Exp11: 极限微丝引导 (q=0.001)，进一步压低 RL 权重，Q值有效受到抑制并贴近专家分布，生存下限得到极大保障
-        "Diff_Exp11_Ultra_Micro_Q": "outputs/models/highway_DiffSAC_20260406_211102/diff_sac_ep400.pth",
+        #"Diff_Exp11": {"path": "outputs/models/highway_DiffSAC_20260406_211102/diff_sac_ep400.pth", "display_name": "Diff-Exp11 极限微丝引导"},
 
         # Diff-Exp12: 冰封马拉松 (ep=800)，进行超长周期的极限保守微调，Q值平滑攀升且全程未发生延迟崩溃，验证了长期稳定性
-        #"Diff_Exp12_Frozen_Marathon": "outputs/models/highway_DiffSAC_20260407_013017/diff_sac_ep800.pth",
+        #"Diff_Exp12": {"path": "outputs/models/highway_DiffSAC_20260407_013017/diff_sac_ep800.pth", "display_name": "Diff-Exp12 冰封马拉松"},
 
         # Diff-Exp13: 终极无坚不摧 (BC=120, q=0.001, lr=3e-4)，最厚护甲与最轻引导的黄金融合，Actor Loss 平稳缓降，预期防守反击 SOTA
-        #"Diff_Exp13_Unbreakable_SOTA": "outputs/models/highway_DiffSAC_20260407_071544/diff_sac_ep400.pth",
+        #"Diff_Exp13": {"path": "outputs/models/highway_DiffSAC_20260407_071544/diff_sac_ep400.pth", "display_name": "Diff-Exp13 终极无坚不摧"},
 
         # Diff-Exp14: 厚甲利刃 (BC=120, q=0.01, lr=3e-4)，更高 Q 引导导致 Actor Loss 显著下探但未崩溃，Q 值全场最高，预期均速 SOTA
-        #"Diff_Exp14_Thick_Shield_Gentle_Q": "outputs/models/highway_DiffSAC_20260407_110205/diff_sac_ep400.pth",
+        #"Diff_Exp14": {"path": "outputs/models/highway_DiffSAC_20260407_110205/diff_sac_ep400.pth", "display_name": "Diff-Exp14 厚甲利刃"},
 
         # Diff-Exp15: 纯粹克隆的物理极限 (BC=120, q=0.0, lr=3e-4)，彻底关闭引导，Actor Loss 最平缓，提供 120 轮先验下的最高安全基准
-        #"Diff_Exp15_Deep_BC_Control": "outputs/models/highway_DiffSAC_20260407_140041/diff_sac_ep400.pth",
+        #"Diff_Exp15": {"path": "outputs/models/highway_DiffSAC_20260407_140041/diff_sac_ep400.pth", "display_name": "Diff-Exp15 深度 BC 对照"},
 
         # Diff-Exp16: 微丝引导马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，第三期冠军参数的加长版验证，600 局探索全程平滑无延迟崩溃
-        #"Diff_Exp16_Ultra_Micro_Marathon": "outputs/models/highway_DiffSAC_20260407_170756/diff_sac_ep600.pth",
+        #"Diff_Exp16": {"path": "outputs/models/highway_DiffSAC_20260407_170756/diff_sac_ep600.pth", "display_name": "Diff-Exp16 微丝引导马拉松"},
 
         # Diff-Exp17: 纯混合克隆基准 (BC=50, q=0.0, lr=3e-4, ep=400)，完全关闭 Q 引导，验证纯靠 v5+v6 神仙数据喂出来的底层模仿上限
-        #"Diff_Exp17_Mixed_BC_Control": "outputs/models/highway_DiffSAC_20260408_141756/diff_sac_ep400.pth",
+        #"Diff_Exp17": {"path": "outputs/models/highway_DiffSAC_20260408_141756/diff_sac_ep400.pth", "display_name": "Diff-Exp17 混合 BC 对照"},
 
         # Diff-Exp18: 混合流形冠军 (BC=50, q=0.001, lr=3e-4, ep=400)，在混合神仙数据上叠加极微丝引导，冲击均速与安全性双重 SOTA 的绝对主力
-        #"Diff_Exp18_Mixed_Ultra_Micro": "outputs/models/highway_DiffSAC_20260408_155039/diff_sac_ep400.pth",
+        #"Diff_Exp18": {"path": "outputs/models/highway_DiffSAC_20260408_155039/diff_sac_ep400.pth", "display_name": "Diff-Exp18 混合微丝引导"},
 
         # Diff-Exp19: 数据容量扩充测试 (BC=80, q=0.001, lr=3e-4, ep=400)，将预训练适度加厚至 80 轮，测试其能否更好地消化充满矛盾（保守与极速）的复杂混合流形
-        #"Diff_Exp19_Mixed_Thicker_Base": "outputs/models/highway_DiffSAC_20260408_190001/diff_sac_ep400.pth",
+        #"Diff_Exp19": {"path": "outputs/models/highway_DiffSAC_20260408_190001/diff_sac_ep400.pth", "display_name": "Diff-Exp19 混合厚底座"},
 
         # Diff-Exp20: 混合马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，冠军参数的加长版在线探索，验证更丰富的混合数据在长周期微调下的最终爆发力
-        "Diff_Exp20_Mixed_Marathon": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth",
+        #"Diff_Exp20": {"path": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth", "display_name": "Diff-Exp20 混合马拉松"},
 
         # Diff-Exp21: 黄金比例马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，采用 80% 保守底座与 20% 激进利刃的黄金数据融合，孤注一掷冲击存活率 80%+ 与均速 22.0+ 的双重 SOTA
-        "Diff_Exp21_Golden_Ratio_Marathon": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth",
+        #"Diff_Exp21": {"path": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth", "display_name": "Diff-Exp21 黄金比例马拉松"},
+
+        # Diff-Exp22: 智能混合克隆基准 (BC=50, q=0.0, lr=3e-4, ep=400)，完全关闭 Q 引导，验证纯靠“去伪存真”的蒸馏数据喂出来的底层模仿安全下限
+        "Diff_Exp22": {"path": "outputs/models/highway_DiffSAC_20260413_031458/diff_sac_ep400.pth", "display_name": "Diff-Exp22 智能 BC 对照"},
+
+        # Diff-Exp23: 智能混合微导 (BC=50, q=0.001, lr=3e-4, ep=400)，在纯净蒸馏数据上叠加微丝引导，观察剥离了“变道毒药”的激进数据能否被安全激发
+        "Diff_Exp23": {"path": "outputs/models/highway_DiffSAC_20260413_041749/diff_sac_ep400.pth", "display_name": "Diff-Exp23 智能微丝引导"},
+
+        # Diff-Exp24: 智能混合厚底座 (BC=80, q=0.001, lr=3e-4, ep=400)，将预训练适度加厚至 80 轮，巩固 90:10 智能数据的肌肉记忆
+        "Diff_Exp24": {"path": "outputs/models/highway_DiffSAC_20260413_052105/diff_sac_ep400.pth", "display_name": "Diff-Exp24 智能厚底座"},
+
+        # Diff-Exp25: 智能混合马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，终极 SOTA 候选！长周期在线探索，验证 10% 提速血清在长程微调下的最终爆发力
+        "Diff_Exp25": {"path": "outputs/models/highway_DiffSAC_20260413_062853/diff_sac_ep600.pth", "display_name": "Diff-Exp25 智能混合马拉松"},
 
         # Diff-Exp8_Run1: 零引导对照组 (首次测试，q=0.0, ep=400)，Critic 曲线全程平滑
-        #"Diff_Exp8_Zero_Q_Run1": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth",
+        #"Diff_Exp8_Run1": {"path": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth", "display_name": "Diff-Exp8_Run1 零引导对照"},
 
         # Diff-Exp8_Run2: 零引导对照组 (第二次测试，q=0.0, ep=500)，Critic 在后期发生震荡，但由于 q=0 被隔离
-        #"Diff_Exp8_Zero_Q_Run2": "outputs/models/highway_DiffSAC_20260406_080556/diff_sac_ep500.pth",
+        #"Diff_Exp8_Run2": {"path": "outputs/models/highway_DiffSAC_20260406_080556/diff_sac_ep500.pth", "display_name": "Diff-Exp8_Run2 零引导对照"},
 
         # Diff-Exp8_Run3: 零引导对照组 (第三次测试，q=0.0, ep=500)，Critic 在中期发生剧烈脉冲，同样被 q=0 隔离
-        #"Diff_Exp8_Zero_Q_Run3": "outputs/models/highway_DiffSAC_20260406_095201/diff_sac_ep500.pth",
-    }
+        #"Diff_Exp8_Run3": {"path": "outputs/models/highway_DiffSAC_20260406_095201/diff_sac_ep500.pth", "display_name": "Diff-Exp8_Run3 零引导对照"},
+        }
+
 
     # 大样本测试局数，100 局是黄金免检样本量
     NUM_EVAL_EPISODES = 100
@@ -397,37 +434,40 @@ if __name__ == "__main__":
     version_tags = []
 
     for name in models_to_evaluate.keys():
-        if name.startswith("v"):
-            version_tags.append(name.split('_')[0])
-        else:
-            version_tags.append(name.split('_')[1])
+        # 使用 model_id 作为版本标签，更简洁
+        # 例如：SAC_v5, Diff_Exp22
+        version_tags.append(name)
 
+    # eval_run_name 仍然使用 model_id 的组合，用于文件夹命名
     versions_str = "_".join(version_tags)
-    eval_run_name = f"eval_[{versions_str}]_{timestamp}"
+    eval_run_name = f"[{versions_str}]_{timestamp}" # Simplified, as TARGET_ENV is now a parent folder
 
     # 构建最终的保存路径
-    eval_run_dir = os.path.join("outputs", "eval_results", eval_run_name)
-    plot_save_dir = os.path.join(eval_run_dir, "plots")
-    data_save_dir = os.path.join(eval_run_dir, "data")
+    eval_run_dir = os.path.join("outputs", TARGET_ENV, "eval_results", eval_run_name)
+    plot_save_dir = os.path.join(eval_run_dir, "plots") # These are relative to eval_run_dir, so no change needed
+    data_save_dir = os.path.join(eval_run_dir, "data") # These are relative to eval_run_dir, so no change needed
 
     # 启动批量测评
     all_results = {}
-    for model_name, path in models_to_evaluate.items():
-        if os.path.exists(path):
+    for model_id, model_config in models_to_evaluate.items(): # 遍历新的字典结构
+        model_path = model_config["path"]
+        display_label = model_config["display_name"]
+        if os.path.exists(model_path):
             res = evaluate_single_model(
-                model_name=model_name,
-                model_path=path,
-                env_name='highway-v0',
+                model_id=model_id, # 传递内部 ID
+                model_path=model_path,
+                display_label=display_label, # 传递显示名称
+                env_name=TARGET_ENV,
                 eval_run_dir=eval_run_dir,
                 num_episodes=NUM_EVAL_EPISODES,
                 expert_data_path=EXPERT_DATA_PATH
             )
             if res:
-                all_results[model_name] = res
+                all_results[model_id] = res # 结果仍然用 model_id 作为键
         else:
-            print(f"⚠️ 找不到权重文件，跳过评估: {path}")
+            print(f"⚠️ 找不到权重文件，跳过评估: {model_path}")
 
     # 出图与落盘
     if len(all_results) > 0:
-        save_metrics_to_csv(all_results, save_dir=data_save_dir)
-        plot_comparisons(all_results, save_dir=plot_save_dir)
+        save_metrics_to_csv(all_results, models_to_evaluate, save_dir=data_save_dir) # 传入 models_to_evaluate
+        plot_comparisons(all_results, models_to_evaluate, save_dir=plot_save_dir) # 传入 models_to_evaluate
