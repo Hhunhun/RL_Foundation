@@ -74,6 +74,15 @@ class SACAgent(BaseAgent):
         # 1. 从经验池中抽取一批数据
         state, action, reward, next_state, done = replay_buffer.sample(batch_size)
 
+        # 🚨 BUG FIX: 强制将底层经验池返回的数据转移到当前 Agent 所在的计算设备 (GPU/CPU)
+        state = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+        action = torch.as_tensor(action, dtype=torch.float32, device=self.device)
+        reward = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
+        next_state = torch.as_tensor(next_state, dtype=torch.float32, device=self.device)
+        done = torch.as_tensor(done, dtype=torch.float32, device=self.device)
+        if reward.dim() == 1: reward = reward.unsqueeze(1)
+        if done.dim() == 1: done = done.unsqueeze(1)
+
         # 获取当前的 alpha 值 (从计算图中剥离，用于 Actor 和 Critic 的 Loss 计算)
         alpha = self.log_alpha.exp().detach()
 

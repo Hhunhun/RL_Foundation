@@ -1,6 +1,12 @@
 import os
+import sys
 import numpy as np
 import torch
+
+# 动态将项目根目录添加到包搜索路径中，防止 ModuleNotFoundError
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(PROJECT_ROOT)
+
 from core.replay_buffer import ReplayBuffer
 from algorithms.sac.sac_agent import SACAgent
 from utils.logger import Logger
@@ -27,10 +33,11 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"SAC_{timestamp}" # 例如：SAC_20231027_103045
 
-    logger = Logger(log_dir=os.path.join("../outputs", env_name, "logs"), env_name=run_id)
+    # 使用绝对路径
+    base_output_dir = os.path.join(PROJECT_ROOT, "outputs")
+    logger = Logger(log_dir=os.path.join(base_output_dir, env_name, "logs"), env_name=run_id)
 
-    # 动态模型存储路径对齐 (解决模型坟场问题)
-    model_save_dir = os.path.join("../outputs", env_name, "models", run_id)
+    model_save_dir = os.path.join(base_output_dir, env_name, "models", run_id)
     os.makedirs(model_save_dir, exist_ok=True)
     print(f"📁 本次运行的模型权重将独立保存在: {model_save_dir}")
 
@@ -53,6 +60,7 @@ def main():
         state, _ = env.reset()
         episode_reward = 0
         episode_steps = 0
+        c_loss_list, a_loss_list = [], []
 
         while True:
             # 动作选择 (带有预热探索机制)
@@ -78,6 +86,8 @@ def main():
             # 网络更新 (当经验池攒够一个 Batch 时才开始反向传播)
             if replay_buffer.size > batch_size:
                 loss_dict = agent.update(replay_buffer, batch_size)
+                c_loss_list.append(loss_dict["critic_loss"])
+                a_loss_list.append(loss_dict["actor_loss"])
 
                 # 将高频数据推送到 TensorBoard (每步记录，利用 flush 实时落盘)
                 logger.log_scalar("Loss/Critic", loss_dict["critic_loss"], total_steps)
@@ -85,7 +95,10 @@ def main():
                 logger.log_scalar("Loss/Alpha", loss_dict["alpha_loss"], total_steps)
                 logger.log_scalar("Metrics/Alpha_Value", loss_dict["alpha"], total_steps)
 
-            if terminated or truncated:
+            # 实时打印单步进度（覆盖同行，不换行）
+            print(f"\r⏳ 引擎运转中... | 全局进度: {total_steps}/{max_steps} 步 | 当前局存活: {episode_steps} 步", end="")
+
+            if terminated or truncated or episode_steps >= 1000:
                 break
 
         episode += 1
@@ -94,9 +107,11 @@ def main():
         logger.log_scalar("Reward/Episode_Reward", episode_reward, episode)
         logger.log_scalar("Metrics/Episode_Steps", episode_steps, episode)
 
-        # 动态日志输出：此时“总步数进度”比“当前局数”重要得多
-        print(
-            f"Episode: {episode} | 存活步数: {episode_steps} | 总步数: {total_steps}/{max_steps} | 回报: {episode_reward:.2f}")
+        avg_c_loss = np.mean(c_loss_list) if c_loss_list else 0.0
+        avg_a_loss = np.mean(a_loss_list) if a_loss_list else 0.0
+
+        # 局末打印详尽的汇总指标
+        print(f"\r🏁 Episode {episode:03d} | Reward: {episode_reward:5.1f} | Steps: {episode_steps:3d} | Total: {total_steps}/{max_steps} | C_Loss: {avg_c_loss:.3f} | A_Loss: {avg_a_loss:.3f}")
 
         # 定期保存检查点 (每跑完 100 局存一次档)
         if episode % 100 == 0:

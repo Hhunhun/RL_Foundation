@@ -144,16 +144,27 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
             ep_reward += reward
             ep_steps += 1
             ep_speeds.append(info.get("ego_speed_vx", 0.0))
+            
+            # [核心修复] 强制截断，与训练脚本 (main_merge.py) 的 100 步“完赛”标准保持一致
+            # 解决了评估时没有“完赛”出口，导致最终必然“被判负”的问题。 
+            # 仅对 merge-v0 生效，防止影响 highway-v0 等其他环境的评估。
+            if env_name == "merge-v0" and ep_steps >= 100:
+                truncated = True
 
-            if terminated or truncated or ep_steps >= max_steps_per_episode:
+            # [新增] 实时终端可视化，对齐训练体验
+            ego_speed = info.get("ego_speed_vx", 0.0)
+            print(f"\r├─ 定量测试 Ep {ep + 1}/{num_episodes} | Step {ep_steps:3d} | 车速 vx: {ego_speed:5.2f} m/s | 单步奖励: {reward:.3f}", end="")
+            
+            if terminated or truncated or ep_steps >= max_steps_per_episode: # 当任何终止条件满足时，结束本局并记录数据
                 metrics['rewards'].append(ep_reward)
                 metrics['lengths'].append(ep_steps)
                 metrics['speeds'].append(np.mean(ep_speeds))
                 if terminated:
                     metrics['crashes'] += 1 # 统计事故率
-
-                if (ep + 1) % 10 == 0 or (ep + 1) == num_episodes:
-                    print(f"进度: {ep + 1}/{num_episodes} 局已完成...")
+                
+                # [优化] 打印更详细的局末总结
+                status = "💥 撞车/越野" if terminated else "🏁 完赛"
+                print(f"\n└─ Episode {ep + 1} 结束: 存活 {ep_steps} 步 | 总回报: {ep_reward:.2f} | 结局: {status}")
                 break
     env_eval.close()
 
@@ -268,7 +279,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     plt.close()
 
     # ----------------------------------------------------
-    # 🆕 图 4：平均纵向速度柱状图 (Y 轴特意从 20 开始，放大差异)
+    # 🆕 图 4：平均纵向速度柱状图 (修复自适应 Y 轴)
     # ----------------------------------------------------
     plt.figure(figsize=(12, 7))
     mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
@@ -276,10 +287,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Mean Speed (m/s)', fontsize=12)
 
-    # 动态设定 Y 轴下限：高速公路场景速度下限设为 20 能更清晰地看出突破
+    # [修复] 动态设定 Y 轴下限。之前写死了 20.0，导致 merge 环境 (均速 17 左右) 的柱子完全不可见！
+    # 现在改为根据实际最小速度动态下潜，保证柱状图完整显示，同时保留差异放大效果。
     min_speed = min(mean_speeds)
     max_speed = max(mean_speeds)
-    plt.ylim(20.0, max_speed + 1.0)
+    y_min = max(0.0, min_speed - 3.0) # 往下探 3m/s，但绝不低于 0
+    plt.ylim(y_min, max_speed + 2.0)
 
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.5)
@@ -287,7 +300,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 在柱子上标注具体数字
     for bar in bars_speed:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.1, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.2, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, '04_mean_speed_bar.png'), dpi=300)
@@ -315,10 +328,23 @@ if __name__ == "__main__":
     # 🚨 动态配置：根据选择的环境切换专家数据集和待评估模型列表
     if TARGET_ENV == "merge-v0":
         # 🚨 注意：请将这里的路径替换为您真实的 merge 专家数据和模型路径！
-        EXPERT_DATA_PATH = "data/expert_data/YOUR_MERGE_DATASET_DIR/expert_transitions.npz"
+        # 评估纯 SAC 时无需归一化数据，直接置 None 即可
+        EXPERT_DATA_PATH = None 
         models_to_evaluate = { # 新结构
-            "Merge_SAC_Expert": {"path": "outputs/models/YOUR_MERGE_SAC_DIR/sac_merge_final.pth", "display_name": "Merge SAC 专家"},
-            "Merge_DiffSAC_SOTA": {"path": "outputs/models/YOUR_MERGE_DIFFSAC_DIR/diff_sac_epXXX.pth", "display_name": "Merge DiffSAC SOTA"},
+            # === 第一期基础实验 (可按需注释屏蔽) ===
+            # "SAC_M1_Run1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_160138/sac_merge_ep1100.pth", "display_name": "M1 基础生存 (Run 1)"},
+            # "SAC_M1_Run2": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_162820/sac_merge_ep1000.pth", "display_name": "M1 基础生存 (Run 2)"},
+            "SAC_M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_165816/sac_merge_final.pth", "display_name": "M1 基础生存"},
+            "SAC_M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260416_225728/sac_merge_final.pth", "display_name": "M2 高效平滑"},
+            "SAC_M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260417_000130/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
+            
+            # === 第二期生存率消融实验 ===
+            # 注意：请在对应实验训练完毕后，将 YOUR_TIMESTAMP 替换为真实的文件夹时间戳
+            "SAC_M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260417_034523/sac_merge_final.pth", "display_name": "M4 安全至上"},
+            "SAC_M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260417_050417/sac_merge_final.pth", "display_name": "M5 耐心等待"},
+            "SAC_M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260417_062309/sac_merge_final.pth", "display_name": "M6 极限死刑"},
+            "SAC_M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260417_074217/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
+            "SAC_M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260417_094059/sac_merge_final.pth", "display_name": "M8 终极汇入"},
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
@@ -333,7 +359,7 @@ if __name__ == "__main__":
         #"SAC_v3": {"path": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth", "display_name": "v3.0 LQR 欠拟合 SAC"},
 
         # v5.0: 锁死了倒车和草地，并练够12万步，表现为求稳的“法规级专家”
-        "SAC_v5": {"path": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth", "display_name": "v5.0 安全保守 SAC"},
+        #"SAC_v5": {"path": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth", "display_name": "v5.0 安全保守 SAC"},
 
         # v6.0: 引入绝对转向约束和高速重塑，表现为敢踩油门的“高效超车专家”
         #"SAC_v6": {"path": "outputs/models/highway-v0_SAC_20260330_213300/sac_highway_final.pth", "display_name": "v6.0 高效超车 SAC"},
@@ -402,16 +428,16 @@ if __name__ == "__main__":
         #"Diff_Exp21": {"path": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth", "display_name": "Diff-Exp21 黄金比例马拉松"},
 
         # Diff-Exp22: 智能混合克隆基准 (BC=50, q=0.0, lr=3e-4, ep=400)，完全关闭 Q 引导，验证纯靠“去伪存真”的蒸馏数据喂出来的底层模仿安全下限
-        "Diff_Exp22": {"path": "outputs/models/highway_DiffSAC_20260413_031458/diff_sac_ep400.pth", "display_name": "Diff-Exp22 智能 BC 对照"},
+        #"Diff_Exp22": {"path": "outputs/models/highway_DiffSAC_20260413_031458/diff_sac_ep400.pth", "display_name": "Diff-Exp22 智能 BC 对照"},
 
         # Diff-Exp23: 智能混合微导 (BC=50, q=0.001, lr=3e-4, ep=400)，在纯净蒸馏数据上叠加微丝引导，观察剥离了“变道毒药”的激进数据能否被安全激发
-        "Diff_Exp23": {"path": "outputs/models/highway_DiffSAC_20260413_041749/diff_sac_ep400.pth", "display_name": "Diff-Exp23 智能微丝引导"},
+        #"Diff_Exp23": {"path": "outputs/models/highway_DiffSAC_20260413_041749/diff_sac_ep400.pth", "display_name": "Diff-Exp23 智能微丝引导"},
 
         # Diff-Exp24: 智能混合厚底座 (BC=80, q=0.001, lr=3e-4, ep=400)，将预训练适度加厚至 80 轮，巩固 90:10 智能数据的肌肉记忆
-        "Diff_Exp24": {"path": "outputs/models/highway_DiffSAC_20260413_052105/diff_sac_ep400.pth", "display_name": "Diff-Exp24 智能厚底座"},
+        #"Diff_Exp24": {"path": "outputs/models/highway_DiffSAC_20260413_052105/diff_sac_ep400.pth", "display_name": "Diff-Exp24 智能厚底座"},
 
         # Diff-Exp25: 智能混合马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，终极 SOTA 候选！长周期在线探索，验证 10% 提速血清在长程微调下的最终爆发力
-        "Diff_Exp25": {"path": "outputs/models/highway_DiffSAC_20260413_062853/diff_sac_ep600.pth", "display_name": "Diff-Exp25 智能混合马拉松"},
+        #"Diff_Exp25": {"path": "outputs/models/highway_DiffSAC_20260413_062853/diff_sac_ep600.pth", "display_name": "Diff-Exp25 智能混合马拉松"},
 
         # Diff-Exp8_Run1: 零引导对照组 (首次测试，q=0.0, ep=400)，Critic 曲线全程平滑
         #"Diff_Exp8_Run1": {"path": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth", "display_name": "Diff-Exp8_Run1 零引导对照"},
