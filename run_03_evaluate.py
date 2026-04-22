@@ -11,6 +11,7 @@
 
 import os
 import csv
+import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -38,6 +39,13 @@ from envs import create_environment
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
+# ----------------------------------------------------
+# 🔒 定义全局评估基础种子，确保每次评估的 100 局路况绝对一致
+# ----------------------------------------------------
+EVAL_BASE_SEED = 42
+random.seed(EVAL_BASE_SEED)
+np.random.seed(EVAL_BASE_SEED)
+torch.manual_seed(EVAL_BASE_SEED)
 
 def evaluate_single_model(model_id, model_path, display_label, env_name, eval_run_dir, num_episodes=100, record_video=True, expert_data_path=None, max_steps_per_episode=1000):
     """
@@ -49,12 +57,12 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     print(f"📁 权重路径: {os.path.abspath(model_path)}")
     print("=" * 60)
 
-    # 智能路由判定：如果名字里带 diff，就走扩散模型那套复杂的处理逻辑
-    is_diff = "Diff" in model_id or "diff" in model_id
+    # 智能路由判定：根据 model_id 自动识别算法 (兼容老名字 Diff/diff 和新名字 DM)
+    is_diff = "Diff" in model_id or "diff" in model_id or "DM" in model_id
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 🚨 核心改造：根据模型类型和评估模式，动态选择算法包装器
-    algo_type = "diff" if "Diff" in model_id or "diff" in model_id else "sac" # 使用 model_id 来判断算法类型
+    algo_type = "diff" if is_diff else "sac"
 
     # 1. 探针环境：开一个临时的环境，仅仅是为了读取状态和动作的维度
     dummy_env = create_environment(env_name, is_eval=True, algo=algo_type)
@@ -97,7 +105,9 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
         env_video = RecordVideo(env_video, video_folder=video_dir, name_prefix=f"{display_label.replace(' ', '_')}_eval") # 使用 display_label 作为视频前缀
 
         for ep in range(2):
-            state, _ = env_video.reset()
+            # 🔒 固定每局的种子，保证所有模型录像时面对的交通流是同一个平行宇宙
+            eval_seed = EVAL_BASE_SEED + ep
+            state, _ = env_video.reset(seed=eval_seed)
             ep_steps = 0
             while True:
                 # 动作生成的路由逻辑：Diffusion 需要来回切换数据尺度，SAC 直接输出
@@ -116,7 +126,16 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
 
                 print(f"\r├─ 录制 Ep {ep + 1}/2 | Step {ep_steps:3d} | 车速 vx: {ego_speed:5.2f} m/s", end="")
                 if terminated or truncated:
-                    print(f"\n└─ 录像完成: {'撞车/越野' if terminated else '完赛'}")
+                    # 🚨 物理探针：区分出界完赛与真实撞车
+                    is_crashed = terminated
+                    if env_name == "merge-v0":
+                        try:
+                            actual_crash = getattr(env_video.unwrapped.vehicle, "crashed", False)
+                            is_sideways = abs(env_video.unwrapped.vehicle.heading) > 0.4
+                            is_not_on_road = not getattr(env_video.unwrapped.vehicle, "on_road", True)
+                            is_crashed = actual_crash or is_sideways or is_not_on_road
+                        except Exception: pass
+                    print(f"\n└─ 录像完成: {'💥 撞车/越野' if is_crashed else '🏁 完赛'}")
                     break
         env_video.close()
 
@@ -128,7 +147,9 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     metrics = {'rewards': [], 'lengths': [], 'speeds': [], 'crashes': 0}
 
     for ep in range(num_episodes):
-        state, _ = env_eval.reset()
+        # 🔒 固定每局的大样本测试种子，确保模型之间的对比是绝对公平的控制变量法
+        eval_seed = EVAL_BASE_SEED + ep
+        state, _ = env_eval.reset(seed=eval_seed)
         ep_reward, ep_steps, ep_speeds = 0, 0, []
 
         while True:
@@ -159,11 +180,22 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                 metrics['rewards'].append(ep_reward)
                 metrics['lengths'].append(ep_steps)
                 metrics['speeds'].append(np.mean(ep_speeds))
-                if terminated:
+                
+                # 🚨 [核心修复] 物理探针直达底层，精准剔除“极速完赛”带来的 Fake Terminated
+                is_crashed = terminated
+                if env_name == "merge-v0":
+                    try:
+                        actual_crash = getattr(env_eval.unwrapped.vehicle, "crashed", False)
+                        is_sideways = abs(env_eval.unwrapped.vehicle.heading) > 0.4
+                        is_not_on_road = not getattr(env_eval.unwrapped.vehicle, "on_road", True)
+                        is_crashed = actual_crash or is_sideways or is_not_on_road
+                    except Exception: pass
+
+                if is_crashed:
                     metrics['crashes'] += 1 # 统计事故率
                 
                 # [优化] 打印更详细的局末总结
-                status = "💥 撞车/越野" if terminated else "🏁 完赛"
+                status = "💥 撞车/越野" if is_crashed else "🏁 完赛"
                 print(f"\n└─ Episode {ep + 1} 结束: 存活 {ep_steps} 步 | 总回报: {ep_reward:.2f} | 结局: {status}")
                 break
     env_eval.close()
@@ -328,26 +360,42 @@ if __name__ == "__main__":
     # 🚨 动态配置：根据选择的环境切换专家数据集和待评估模型列表
     if TARGET_ENV == "merge-v0":
         # 🚨 注意：请将这里的路径替换为您真实的 merge 专家数据和模型路径！
-        # 评估纯 SAC 时无需归一化数据，直接置 None 即可
-        EXPERT_DATA_PATH = None 
+        # 评估 Diff-SAC 时，必须提供专家数据集路径以初始化归一化器 (Normalizer)
+        EXPERT_DATA_PATH = "data/expert_data/merge-v0/dataset_base_20260422_014135/expert_transitions.npz"
         models_to_evaluate = { # 新结构
             # === 第一期基础实验 (可按需注释屏蔽) ===
-            # "SAC_M1_Run1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_160138/sac_merge_ep1100.pth", "display_name": "M1 基础生存 (Run 1)"},
-            # "SAC_M1_Run2": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_162820/sac_merge_ep1000.pth", "display_name": "M1 基础生存 (Run 2)"},
-            "SAC_M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_165816/sac_merge_final.pth", "display_name": "M1 基础生存"},
-            "SAC_M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260416_225728/sac_merge_final.pth", "display_name": "M2 高效平滑"},
-            "SAC_M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260417_000130/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
+            #"M1_Run1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_160138/sac_merge_ep1100.pth", "display_name": "M1 基础生存 (Run 1)"},
+            #"M1_Run2": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_162820/sac_merge_ep1000.pth", "display_name": "M1 基础生存 (Run 2)"},
+            #"M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_165816/sac_merge_final.pth", "display_name": "M1 基础生存"},
+            #"M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260416_225728/sac_merge_final.pth", "display_name": "M2 高效平滑"},
+            #"M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260417_000130/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
             
             # === 第二期生存率消融实验 ===
-            # 注意：请在对应实验训练完毕后，将 YOUR_TIMESTAMP 替换为真实的文件夹时间戳
-            "SAC_M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260417_034523/sac_merge_final.pth", "display_name": "M4 安全至上"},
-            "SAC_M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260417_050417/sac_merge_final.pth", "display_name": "M5 耐心等待"},
-            "SAC_M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260417_062309/sac_merge_final.pth", "display_name": "M6 极限死刑"},
-            "SAC_M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260417_074217/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
-            "SAC_M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260417_094059/sac_merge_final.pth", "display_name": "M8 终极汇入"},
+            #"M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260417_034523/sac_merge_final.pth", "display_name": "M4 安全至上"},
+            #"M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260417_050417/sac_merge_final.pth", "display_name": "M5 耐心等待"},
+            #"M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260417_062309/sac_merge_final.pth", "display_name": "M6 极限死刑"},
+            #"M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260417_074217/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
+            #"M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260417_094059/sac_merge_final.pth", "display_name": "M8 终极汇入"},
+
+            # === 第一期基础实验（加入TTC） ===
+            #"M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260420_150323/sac_merge_final.pth", "display_name": "M1 基础生存"},
+            #"M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "display_name": "M2 高效平滑"},
+            "M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
+            "M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M4 安全至上"},
+            #"M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260420_220108/sac_merge_final.pth", "display_name": "M5 耐心等待"},
+            #"M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "display_name": "M6 极限死刑"},
+            #"M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
+            "M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M8 终极汇入"},
+
+            # === diff-SAC实验 ===
+            "DM1": {"path": "outputs/merge-v0/models/DiffSAC_DM1_Zero_Q_20260422_020015/online_finetune/diff_sac_ep400.pth", "display_name": "DM1 纯模仿"},
+            "DM2": {"path": "outputs/merge-v0/models/DiffSAC_DM2_Micro_Q_20260422_021730/online_finetune/diff_sac_ep400.pth", "display_name": "DM2 保守试探"},
+            "DM3": {"path": "outputs/merge-v0/models/DiffSAC_DM3_Gentle_Q_20260422_023433/online_finetune/diff_sac_ep400.pth", "display_name": "DM3 微弱提速"},
+            "DM4": {"path": "outputs/merge-v0/models/DiffSAC_DM4_Standard_Q_20260422_025352/online_finetune/diff_sac_ep400.pth", "display_name": "DM4 激进提速"},
+
         }
     else: # highway-v0
-        EXPERT_DATA_PATH = "data/expert_data/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
+        EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
         models_to_evaluate = { # 新结构
         # v1.0: 没有任何约束，表现为“原地发癫”和“极度胆小”
         #"SAC_v1": {"path": "outputs/models/highway-v0_SAC_20260329_150543/sac_highway_final.pth", "display_name": "v1.0 无约束 SAC"},
@@ -457,14 +505,9 @@ if __name__ == "__main__":
     # 动态文件夹命名逻辑：自动提取参与评估的模型简称
     # ==========================================
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    version_tags = []
 
-    for name in models_to_evaluate.keys():
-        # 使用 model_id 作为版本标签，更简洁
-        # 例如：SAC_v5, Diff_Exp22
-        version_tags.append(name)
-
-    # eval_run_name 仍然使用 model_id 的组合，用于文件夹命名
+    # 因为字典的 key 已经精简为 M/DM 格式，直接拼接即可
+    version_tags = list(models_to_evaluate.keys())
     versions_str = "_".join(version_tags)
     eval_run_name = f"[{versions_str}]_{timestamp}" # Simplified, as TARGET_ENV is now a parent folder
 

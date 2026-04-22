@@ -51,9 +51,15 @@ class MergeAVControlWrapper(gym.Wrapper):
                 steering_mag = abs(action[1])
                 reward -= (self.jerk_weight * (steering_jerk ** 2) + self.steering_weight * (steering_mag ** 2))
                 
-                # 惩罚无意义的龟速（但保留适度减速让行的空间）
-                if ego_speed_vx < 10.0:
-                    reward -= (10.0 - ego_speed_vx) * 0.1 
+                # =========================================================
+                # 🚫 [核心优化：封杀消极苟活漏洞]
+                # 目的：防止主车学会“一脚刹车踩死，等NPC先走”的作弊让行策略。
+                # 机制：将龟速惩罚阈值从 10.0m/s 提高到 15.0m/s (约 54km/h)。
+                # 效果：逼迫模型学会在保持较高车速的情况下，通过“微调降速(如18m/s)”
+                #       或者“向左变道”来完成高动态的避让博弈。
+                # =========================================================
+                if ego_speed_vx < 15.0:
+                    reward -= (15.0 - ego_speed_vx) * 0.5 
 
         self.last_action = action.copy()
         info["ego_speed_vx"] = ego_speed_vx
@@ -94,7 +100,7 @@ class DiffMergeAVControlWrapper(gym.Wrapper):
         return next_obs, reward, terminated, truncated, info
 
 # ----------------------------------------------------
-# 🎯 核心工厂函数 (移除空间传送，回归原生环境)
+# 🎯 核心工厂函数
 # ----------------------------------------------------
 def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False, algo="sac", wrapper_config=None, env_config=None):
     env = gym.make(env_name, render_mode=render_mode)
@@ -107,6 +113,54 @@ def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False
         return original_rewards_fn(action)
     unwrapped_env._rewards = patched_rewards
 
+    # =========================================================
+    # 🎯 [核心优化：注入 TTC 同步传送魔法]
+    # 目的：修复默认环境中“匝道NPC过早到达汇入口”的物理错位问题。
+    # 机制：接管底层 reset() 函数，通过物理学公式(距离=速度×时间)强行重置双车位置。
+    # =========================================================
+    original_reset = unwrapped_env.reset
+    def patched_reset(*args, **kwargs):
+        # 先让底层完成原生的初始化
+        obs, info = original_reset(*args, **kwargs)
+        try:
+            ego = unwrapped_env.vehicle
+            road = unwrapped_env.road
+            
+            # [主车设定]
+            # 锁定自车在右侧主路车道 ("a", "b", 1)，初始位置 x=30m，起步速度 25m/s
+            # 假设汇入口 (Merge Point) 位于 x=130m 处
+            # 主车到达汇入口所需时间 (TTC) = (130 - 30) / 25 = 4.0 秒
+            ego.lane_index = ("a", "b", 1)
+            lane_ego = road.network.get_lane(("a", "b", 1))
+            ego.position = lane_ego.position(30, 0)
+            ego.speed = 25.0 
+            
+            # [匝道 NPC 设定]
+            # 找到匝道 ("j", "k", 0) 上的第一辆 NPC
+            ramp_lane = road.network.get_lane(("j", "k", 0))
+            ramp_vehicles = [v for v in road.vehicles if v is not ego and v.lane_index == ("j", "k", 0)]
+            if ramp_vehicles:
+                npc = ramp_vehicles[0]
+                # 为了让 NPC 也恰好在 4.0 秒后到达汇入口 (构建完美碰撞航线)
+                # 若设定 NPC 速度为 20m/s，其需要行驶的距离为 20 * 4.0 = 80m
+                # 匝道总长 130m，所以 NPC 的初始位置应放置在 130 - 80 = 50m 处
+                npc.position = ramp_lane.position(50, 0)
+                npc.speed = 20.0
+                npc.target_speed = 25.0 # 赋予 NPC 合理的持续加速意图
+                
+            # [极度关键]：物理位置被我们强行篡改后，原有的 obs 张量就作废了
+            # 必须调用环境底层方法，重新发射雷达射线获取最新的状态张量
+            obs = unwrapped_env.observation_type.observe()
+        except Exception as e:
+            # 容错：如果未来 highway-env 更新改了底层车道 ID ("a","b","j","k")
+            # 捕获异常并静默退回默认生成位置，防止程序直接崩溃
+            pass 
+        return obs, info
+    
+    # 用我们打好补丁的 reset 替换环境底层的 reset
+    unwrapped_env.reset = patched_reset
+    # =========================================================
+
     # 🔧 基础配置：回归官方默认逻辑
     base_config = {
         "observation": {"type": "Kinematics", "vehicles_count": 5, "features": ["presence", "x", "y", "vx", "vy"], "absolute": False, "normalize": True},
@@ -118,7 +172,7 @@ def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False
         "collision_reward": -10.0 if not is_eval else -1.0,
         "high_speed_reward": 5.0 if not is_eval else 1.0,
         "reward_speed_range": [20, 30], "show_trajectories": True,
-        # 可以显式关闭 right_lane_reward，防止自车被强行“吸”到右侧匝道去
+        # 显式关闭 right_lane_reward，防止自车被强行“吸”到右侧匝道去
         "right_lane_reward": 0.0, 
     }
 

@@ -12,7 +12,9 @@
 import os
 import time
 import numpy as np
+import re
 from datetime import datetime
+from gymnasium.wrappers import RecordVideo
 import warnings
 
 # 锁定项目根目录以确保数据保存路径绝对安全
@@ -26,15 +28,15 @@ from algorithms.sac.sac_agent import SACAgent
 from envs import create_environment
 
 
-def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50000, mode=1, test_mode=False, max_steps_per_episode=1000):
+def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50000, mode=1, test_mode=False, max_steps_per_episode=1000, env_config=None):
     print("\n" + "=" * 60)
     print("🚀 [阶段一] 开始专家轨迹数据采集 (Expert Data Collection)")
     print(f"📦 目标采集量: {target_transitions} 步 | 环境: {env_name} | 当前模式: Mode {mode} {'(测试模式，不过滤碰撞)' if test_mode else ''}")
     print(f"🧠 加载权重: {model_path}")
+    if env_config: print(f"⚙️ 环境自定义配置: {env_config}")
     print("=" * 60)
 
-    # 创建评估模式的环境（is_eval=True 代表关闭训练期那些严苛的惩罚，仅测试纯粹的物理驾驶表现）
-    env = create_environment(env_name, is_eval=True, algo="sac")
+    env = create_environment(env_name, is_eval=True, algo="sac", env_config=env_config)
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
@@ -70,11 +72,22 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             # 学术级数据增强操作：50% 概率保持绝对纯净，50% 概率加入微小的正态分布噪声。
             # Mode 2 需要纯粹的极速发挥，因此关闭抖动。
             if mode == 1 and np.random.rand() < 0.5:
-                noise = np.random.normal(0, 0.05, size=action_dim)
-                action = np.clip(action + noise, -1.0, 1.0)
+                if env_name == "merge-v0":
+                    # 🐛 TTC 极度敏感修复: Merge 环境完全关闭步进式抖动！
+                    # 哪怕是微小的纵向干扰，累计后也会摧毁 M8 精准的避让微操导致 100% 追尾。
+                    # 数据多样性将由环境中随机初始化的背景车辆来自然保证。
+                    pass
+                else:
+                    noise = np.random.normal(0, 0.05, size=action_dim)
+                    action = np.clip(action + noise, -1.0, 1.0)
 
             # 将动作输入物理环境，获取下一步的反馈
             next_state, reward, terminated, truncated, info = env.step(action)
+            ep_steps += 1
+
+            # 🚨 [核心修复] 强制截断：避免车辆一直开到地图尽头掉进虚空，被误判为“出界/撞车”
+            if env_name == "merge-v0" and ep_steps >= 100:
+                truncated = True
 
             # 将这一步的数据暂存进当前局的缓存列表中
             ep_obs.append(state)
@@ -85,12 +98,21 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             ep_speeds.append(info.get("ego_speed_vx", 0.0))
 
             state = next_state
-            ep_steps += 1
 
             # 如果撞车/出轨(terminated) 或达到最大步数(truncated)，当前局结束
             if terminated or truncated or ep_steps >= max_steps_per_episode:
                 if terminated:
-                    crashed = True
+                    # 🚨 [核心修复] 区分真假车祸，保护“极速超车”的神仙局
+                    # Merge 道路极短，车辆如果加速超车，会在 100 步内冲出地图纵向尽头(out_of_road)，
+                    # 此时底层会报 terminated=True。但这绝不是车祸，而是最高效的完赛！
+                    try:
+                        actual_crash = getattr(env.unwrapped.vehicle, "crashed", False)
+                        is_sideways = abs(env.unwrapped.vehicle.heading) > 0.4
+                        is_not_on_road = not getattr(env.unwrapped.vehicle, "on_road", True)
+                        
+                        crashed = actual_crash or is_sideways or is_not_on_road
+                    except Exception:
+                        crashed = True # 兜底逻辑
                 break
 
         # 🚨 回合级淘汰机制 (Episode-level Filtering) 🚨
@@ -100,20 +122,29 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
         if test_mode:
             # 测试模式下，不进行任何过滤，直接接受所有数据
             accept_episode = True
-            reason = "测试模式，强制接受"
+            reason = "测试模式"
         else:
             if mode == 1:
                 # Mode 1 逻辑：只要没撞车就收下
                 if not crashed:
                     accept_episode = True
+                    reason = "安全完赛"
                 else:
                     reason = "发生碰撞/出界"
             elif mode == 2:
                 # Mode 2 逻辑：神仙局必须同时满足【不撞车】且【均速 > 22.0】
-                if not crashed and mean_speed > 22.0:
-                    accept_episode = True
-                else:
-                    reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标"
+                    if env_name == "merge-v0":
+                        if not crashed and mean_speed > 18.0: # Merge 的速度要求稍微放宽，避免死循环
+                            accept_episode = True
+                            reason = f"激进破局(均速:{mean_speed:.1f})"
+                        else:
+                            reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>18.0)"
+                    else:
+                        if not crashed and mean_speed > 22.0:
+                            accept_episode = True
+                            reason = f"神仙局(均速:{mean_speed:.1f})"
+                        else:
+                            reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>22.0)"
 
         # 执行数据并入或丢弃
         if accept_episode:
@@ -124,13 +155,14 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             dataset['rewards'].extend(ep_rews)
             dataset['next_observations'].extend(ep_next_obs)
             dataset['terminals'].extend(ep_terms)
-
-            # 实时打印进度条
-            progress = min(100.0, (collected_steps / target_transitions) * 100)
-            print(f"\r✅ 进度: [{progress:5.1f}%] | 均速: {mean_speed:.2f} m/s | 已收: {collected_steps}/{target_transitions} 步 | 有效局: {successful_episodes} {'(测试模式)' if test_mode else ''}   ", end="")
+            status_msg = f"✅ 收录! ({reason})"
         else:
             discarded_episodes += 1
-            print(f"\r⚠️ 劣质对局被过滤 ({reason})... (已丢弃 {discarded_episodes} 局)               ", end="")
+            status_msg = f"⚠️ 丢弃 ({reason})"
+
+        # 📊 优化终端输出：实时更新全局看板，将成功和失败的信息汇总到一行
+        progress = min(100.0, (collected_steps / target_transitions) * 100)
+        print(f"\r📊 进度: {progress:5.1f}% ({collected_steps}/{target_transitions}步) | 收: {successful_episodes} 局 | 弃: {discarded_episodes} 局 | 最新: {status_msg}" + " " * 10, end="")
 
     env.close()
 
@@ -140,8 +172,17 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
 
     # 根据采集模式和当前时间生成专属的存档目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_prefix = f"{env_name}_dataset_v5_base_" if mode == 1 else f"{env_name}_dataset_v6_pro_"
-    save_dir = os.path.join(PROJECT_ROOT, "data", "expert_data", f"{dataset_prefix}{timestamp}")
+    
+    # 自动解析专家模型的名称，让数据集名字更具可读性
+    model_dir_name = os.path.basename(os.path.dirname(model_path))
+    match = re.search(r'SAC_(.*?)_\d{8}', model_dir_name)
+    if match:
+        source_name = match.group(1)
+    else:
+        source_name = "Expert"
+        
+    dataset_prefix = f"dataset_{source_name}_mode{mode}_"
+    save_dir = os.path.join(PROJECT_ROOT, "data", "expert_data", env_name, f"{dataset_prefix}{timestamp}")
     os.makedirs(save_dir, exist_ok=True)
     data_path = os.path.join(save_dir, "expert_transitions.npz")
 
@@ -149,6 +190,28 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
     np.savez_compressed(data_path, **dataset)
 
     print(f"\n\n💾 数据集已完美保存至: {data_path}")
+
+    # 🎬 新增：在数据集文件夹内同时渲染并保存几局专家视频，便于人类直接观察
+    if env_name == "merge-v0":
+        print(f"🎬 正在为您录制 3 局专家实况录像，以供直观检查数据质量...")
+        video_dir = os.path.join(save_dir, "videos")
+        rec_env = create_environment(env_name, is_eval=True, algo="sac", env_config=env_config)
+        rec_env = RecordVideo(rec_env, video_folder=video_dir, name_prefix=f"expert_demo_mode{mode}")
+        
+        for _ in range(3):
+            obs, _ = rec_env.reset()
+            rec_steps = 0
+            while True:
+                act = agent.select_action(obs, evaluate=True)
+                obs, _, term, trunc, _ = rec_env.step(act)
+                rec_steps += 1
+                if rec_steps >= 100:
+                    trunc = True
+                if term or trunc:
+                    break
+        rec_env.close()
+        print(f"✅ 录像已保存至子目录: {video_dir}")
+
     print(f"⏱️ 耗时: {(time.time() - start_time) / 60:.2f} 分钟")
 
     # 🚨 返回数据路径，供主控流水线 (02_train_pipeline) 直接读取传递给下一阶段
@@ -161,8 +224,8 @@ if __name__ == "__main__":
     # ==========================================
     print("🤖 欢迎使用专家数据采集终端")
     print("==========================================")
-    print("[1] 基础底座模式 (Mode 1): 使用 v5.0 模型，含行为抖动，仅过滤碰撞局。(适用构建安全保底)")
-    print("[2] 极速神仙局模式 (Mode 2): 使用 v6.0 模型，关闭抖动，严格过滤碰撞且强制要求均速 > 22.0 m/s。(适用破局上限)")
+    print("[1] 基础底座模式 (Mode 1): 使用保守安全模型，含行为抖动，仅过滤碰撞局。(适用构建安全保底)")
+    print("[2] 极速神仙局模式 (Mode 2): 使用激进破局模型，关闭抖动，严格过滤速度阈值。(适用探寻上限)")
     print("==========================================")
 
     # 新增：环境选择逻辑
@@ -174,22 +237,33 @@ if __name__ == "__main__":
 
     choice = input("👉 请输入采集模式 (1 或 2，默认 1): ").strip()
 
-    # 🚨 注意：如果在上方选择了 M (Merge) 环境，这里必须换成你在 Merge 上专门训练出的 SAC 模型路径！
-    # 否则用 highway 的大脑去开 merge，会一路撞车，数据采集会被无限期拉长且全部是被过滤的劣质局。
-    V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
-    V6_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_213300", "sac_highway_final.pth")
+    # 🚨 根据终端选择的环境，动态隔离并加载对应的 SAC 专家模型路径
+    if target_env == "merge-v0":
+        # Merge 环境：使用 M8 作为保守专家 (Mode 1)，M4 作为激进/效率专家 (Mode 2)
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M8_Ultimate_Merge_20260421_023258", "sac_merge_final.pth")
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 动态匹配 M8 的训练环境
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
+        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 动态匹配 M4 的训练环境
+    else:
+        # Highway 环境：使用过去的经典权重
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
+        SAFE_ENV_CONFIG = None
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_213300", "sac_highway_final.pth")
+        AGGRESSIVE_ENV_CONFIG = None
 
     if choice == '2':
         selected_mode = 2
-        selected_model = V6_MODEL_PATH
+        selected_model = AGGRESSIVE_MODEL_PATH
+        selected_env_config = AGGRESSIVE_ENV_CONFIG
     else:
         selected_mode = 1
-        selected_model = V5_MODEL_PATH
+        selected_model = SAFE_MODEL_PATH
+        selected_env_config = SAFE_ENV_CONFIG
 
-    # 通宵挂机推荐目标量：50000步
-    TARGET_STEPS = 50000
+    # 通宵挂机推荐目标量：Highway 50000步，Merge 20000步
+    TARGET_STEPS = 20000 if target_env == "merge-v0" else 50000
 
     if os.path.exists(selected_model):
-        collect_expert_data(model_path=selected_model, env_name=target_env, target_transitions=TARGET_STEPS, mode=selected_mode)
+        collect_expert_data(model_path=selected_model, env_name=target_env, target_transitions=TARGET_STEPS, mode=selected_mode, env_config=selected_env_config)
     else:
         print(f"\n❌ 找不到指定的权重文件！请确保路径正确: {selected_model}")
