@@ -19,7 +19,7 @@ from core.offline_buffer import ExpertDataset
 from algorithms.diffusion_sac.diffusion_model import ConditionalActor, NoiseScheduler
 
 
-def train_diffusion_bc(data_path, env_name="highway-v0", num_epochs=50, batch_size=256, learning_rate=3e-4):
+def train_diffusion_bc(data_path, env_name="highway-v0", num_epochs=50, batch_size=256, learning_rate=3e-4, run_name=None):
     print("=" * 60)
     print("🚀 [阶段二] 开始 Diffusion Actor 离线预训练 (Behavior Cloning)")
     print("=" * 60)
@@ -47,8 +47,12 @@ def train_diffusion_bc(data_path, env_name="highway-v0", num_epochs=50, batch_si
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # 准备模型保存路径 (使用绝对路径构建)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", f"diffusion_bc_{timestamp}")
+    if run_name:
+        save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", run_name, "bc_pretrain")
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", f"diffusion_bc_{timestamp}")
+        
     os.makedirs(save_dir, exist_ok=True)
 
     # 开启训练模式 (启用 Dropout/BatchNorm 等训练期特有行为)

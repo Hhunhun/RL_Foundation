@@ -22,7 +22,7 @@ from core.offline_buffer import MixedReplayBuffer
 from algorithms.diffusion_sac.diff_sac_agent import DiffSACAgent
 
 
-def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="highway-v0", max_episodes=250, batch_size=256, q_weight=0.05, lr=3e-4, max_steps_per_episode=1000):
+def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="highway-v0", max_episodes=250, batch_size=256, q_weight=0.05, lr=3e-4, max_steps_per_episode=1000, run_name=None):
     print("=" * 60)
     print("🚀 [阶段三] Diffusion-RL 在线微调 (Demo Augmented RL 专家混合增强版)")
     print("=" * 60)
@@ -48,9 +48,14 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="hi
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # --- 日志与存档准备 --- (使用绝对路径构建)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", f"DiffSAC_{timestamp}")
-    log_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "logs", f"DiffSAC_{timestamp}")
+    if run_name:
+        save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", run_name, "online_finetune")
+        log_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "logs", run_name)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "models", f"DiffSAC_{timestamp}")
+        log_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "logs", f"DiffSAC_{timestamp}")
+        
     os.makedirs(save_dir, exist_ok=True)
 
     writer = SummaryWriter(log_dir=log_dir)
@@ -133,7 +138,7 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="hi
 if __name__ == "__main__":
     # 本地独立测试时的入口路径 (通常通过 02_train_pipeline 调度，极少直接运行此文件)
     PRETRAINED_ACTOR_PATH = "../outputs/models/diffusion_bc_20260403_015017/diffusion_actor_bc.pth"
-    EXPERT_DATA_PATH = "../data/expert_data/dataset_v5_20260403_014037/expert_transitions.npz"
+    EXPERT_DATA_PATH = "../data/expert_data/highway-v0/dataset_v5_20260403_014037/expert_transitions.npz"
 
     train_online_diffusion(
         pretrained_actor_path=PRETRAINED_ACTOR_PATH,
