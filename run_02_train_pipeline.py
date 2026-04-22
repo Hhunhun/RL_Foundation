@@ -13,6 +13,7 @@ import os
 import gc
 import torch
 import time
+import inspect
 from datetime import datetime
 
 # 导入流水线的各个子模块
@@ -111,19 +112,40 @@ if __name__ == "__main__":
     REUSE_DATA = True
 
     # 🚨 动态配置：根据选择的环境切换专家模型和数据集路径
-    # 🚨🚨🚨 重要：请在应用新的文件夹结构后，手动更新以下 V5_MODEL_PATH 和 EXPERT_DATA_PATH 的值！
+    # 🚨🚨🚨 重要：请在应用新的文件夹结构后，手动更新以下 SAFE_MODEL_PATH 和 EXPERT_DATA_PATH 的值！
     # 它们需要指向新结构下的正确路径，例如：
     # outputs/merge-v0/models/SAC_YYYYMMDD_HHMMSS/sac_merge_final.pth
-    # data/expert_data/merge-v0_dataset_v5_base_YYYYMMDD_HHMMSS/expert_transitions.npz
+    # data/expert_data/merge-v0/dataset_base_YYYYMMDD_HHMMSS/expert_transitions.npz
     if TARGET_ENV == "merge-v0":
-        # 示例：请替换为你在 merge-v0 环境下训练的 SAC 专家模型路径
-        V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "YOUR_MERGE_SAC_DIR", "sac_merge_final.pth")
-        # 示例：请替换为你在 merge-v0 环境下采集的专家数据路径
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "YOUR_MERGE_DATASET_DIR", "expert_transitions.npz")
+        # ==========================================
+        # 🚨 [专家底座配置区] 支持动态适配不同的 SAC 模型
+        # ==========================================
+        EXPERT_CONFIGS = {
+            "M8_Ultimate": {
+                "model_path": os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M8_Ultimate_Merge_20260421_023258", "sac_merge_final.pth"),
+                "env_config": {"reward_speed_range": [15, 25]}
+            },
+            "M4_Safety": {
+                "model_path": os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth"),
+                "env_config": {"reward_speed_range": [15, 25]}
+            }
+            # 未来如果想用 M2，只需在这里添加:
+            # "M2_Efficient": {"model_path": "...", "env_config": {"reward_speed_range": [18, 28]}}
+        }
+        
+        ACTIVE_EXPERT = "M8_Ultimate" # 👉 更改此处名称，即可一键切换底层专家和对应的环境速度区间
+        SAFE_MODEL_PATH = EXPERT_CONFIGS[ACTIVE_EXPERT]["model_path"]
+        SAFE_ENV_CONFIG = EXPERT_CONFIGS[ACTIVE_EXPERT]["env_config"]
+        
+        # 👉 已为您自动填入刚刚采集完美的 2 万步数据集名称
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_base_20260422_014135", "expert_transitions.npz")
+        TARGET_DATA_STEPS = 20000 # 按照最新要求，采集 1-2 万步即可
     else:
         # Highway 环境默认路径
-        V5_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT,"data","expert_data","dataset_smart_mixed_90_10_20260413_031136", "expert_transitions_smart_90_10.npz")
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
+        SAFE_ENV_CONFIG = None
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "highway-v0", "dataset_smart_mixed_90_10_20260413_031136", "expert_transitions_smart_90_10.npz")
+        TARGET_DATA_STEPS = 50000
     # ==========================================
     # 1. 统一的数据流准备 (Data Preparation)
     # ==========================================
@@ -134,11 +156,12 @@ if __name__ == "__main__":
         data_path = EXPERT_DATA_PATH
     else:
         print("🚀 阶段一: 重新采集专家数据...")
-        # 如果没有历史数据，就现场召唤 SAC 专家跑出 5 万步的数据集
+        # 如果没有历史数据，就现场召唤 SAC 专家跑出数据集
         data_path = collect_expert_data(
-            model_path=V5_MODEL_PATH,
+            model_path=SAFE_MODEL_PATH,
             env_name=TARGET_ENV,
-            target_transitions=50000
+            target_transitions=TARGET_DATA_STEPS,
+            env_config=SAFE_ENV_CONFIG
         )
     clear_gpu_memory()
 
@@ -156,17 +179,22 @@ if __name__ == "__main__":
         print("🛡️" * 30)
 
         # 极速参数：仅跑 2 个 Epoch 和 5 局游戏，通常两分钟内就能跑完
-        smoke_config = {"name": "Exp_0_Smoke_Test", "bc_epochs": 2, "q_weight": 0.05, "lr": 3e-4, "episodes": 5}
+        smoke_config = {"name": "DM0_Smoke_Test", "bc_epochs": 2, "q_weight": 0.05, "lr": 3e-4, "episodes": 5}
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"DiffSAC_{smoke_config['name']}_{current_time}"
         print(f"📊 运行参数: {smoke_config}")
 
         # 测试离线预训练管线
-        pretrained_model_path = train_diffusion_bc(
-            data_path=data_path,
-            env_name=TARGET_ENV,
-            num_epochs=smoke_config["bc_epochs"],
-            batch_size=256,
-            learning_rate=smoke_config["lr"]
-        )
+        bc_kwargs = {
+            "data_path": data_path,
+            "env_name": TARGET_ENV,
+            "num_epochs": smoke_config["bc_epochs"],
+            "batch_size": 256,
+            "learning_rate": smoke_config["lr"]
+        }
+        if "run_name" in inspect.signature(train_diffusion_bc).parameters:
+            bc_kwargs["run_name"] = run_name
+        pretrained_model_path = train_diffusion_bc(**bc_kwargs)
         clear_gpu_memory()
 
         # 测试在线微调管线
@@ -177,7 +205,8 @@ if __name__ == "__main__":
             max_episodes=smoke_config["episodes"],
             batch_size=256,
             q_weight=smoke_config["q_weight"],
-            lr=smoke_config["lr"]
+            lr=smoke_config["lr"],
+            run_name=run_name
         )
         print("\n✅ 冒烟测试圆满结束！所有管线畅通无阻，您可以放心启动 OVERNIGHT 模式了。")
 
@@ -191,22 +220,25 @@ if __name__ == "__main__":
 
         # 单次运行的特定参数 (当前锁定为实验四：长跑稳定验证)
         single_config = {
-            "name": "Exp_4_Stable_Long",
+            "name": "DM4_Stable_Long",
             "bc_epochs": 80,  # 增加专家预训练轮次，打好基本功
             "q_weight": 0.05,  # 标准 Q 引导权重
             "lr": 1e-4,  # 🚨 降低学习率，追求更平稳的长期收敛
             "episodes": 500  # 延长在线训练局数
         }
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"DiffSAC_{single_config['name']}_{current_time}"
         print(f"📊 运行参数: {single_config}")
 
         # 执行离线 BC
-        pretrained_model_path = train_diffusion_bc(
-            data_path=data_path,
-            env_name=TARGET_ENV,
-            num_epochs=single_config["bc_epochs"],
-            batch_size=256,
-            learning_rate=single_config["lr"]
-        )
+        bc_kwargs = {
+            "data_path": data_path, "env_name": TARGET_ENV,
+            "num_epochs": single_config["bc_epochs"], "batch_size": 256,
+            "learning_rate": single_config["lr"]
+        }
+        if "run_name" in inspect.signature(train_diffusion_bc).parameters:
+            bc_kwargs["run_name"] = run_name
+        pretrained_model_path = train_diffusion_bc(**bc_kwargs)
         clear_gpu_memory()
 
         # 执行在线微调 (确保环境是平滑过渡的 algo="diff" 模式)
@@ -217,7 +249,8 @@ if __name__ == "__main__":
             max_episodes=single_config["episodes"],
             batch_size=256,
             q_weight=single_config["q_weight"],
-            lr=single_config["lr"]
+            lr=single_config["lr"],
+            run_name=run_name
         )
         print("\n✅ 单次运行任务圆满结束！")
 
@@ -329,26 +362,48 @@ if __name__ == "__main__":
             # 实验组 17: 纯混合克隆基准 (Mixed BC Control)
             # 对应之前的 Exp_8。完全关闭 Q 引导 (q=0.0)。
             # 这是极其关键的基准线！我们要看仅仅是“喂了更好的数据”，模型纯靠模仿，能否在速度上超越以前的 Exp_8。
-            {"name": "Exp_17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            # {"name": "Exp_17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
 
             # 实验组 18: 混合流形冠军 (Mixed Ultra-Micro Q)
             # 对应之前的全场最佳 Exp_11。
             # 这是我们冲击最终 SOTA 的主力军！看看在混合神仙数据的加持下，0.001 的微弱提速能否完美兑现。
-            {"name": "Exp_18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            # {"name": "Exp_18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
 
             # 实验组 19: 数据容量扩充测试 (Mixed Thicker Base)
             # 这是一个新策略！因为混合数据集包含了“减速”和“极速”两种互相矛盾的动作，流形变复杂了。
             # 50 轮预训练可能背不过这么复杂的规律，所以我们把底座适度加厚到 80 轮（但避开 120 轮的死板陷阱）。
-            {"name": "Exp_19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            # {"name": "Exp_19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
 
             # 实验组 20: 混合马拉松 (Mixed Marathon)
             # 对应之前的 Exp_16。
             # 既然数据更丰富了，给它更长的在线交互时间（600局），看它能否彻底融会贯通，攀上均速的巅峰。
-            {"name": "Exp_20_Mixed_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
+            # {"name": "Exp_20_Mixed_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
         ]
 
+        # ==========================================
+        # Diff-SAC 针对 Merge 环境的初始探索矩阵
+        # 根据 Highway 积累的经验，我们围绕最稳妥的参数区间制定了 Merge 第一期探雷策略：
+        # ==========================================
+        merge_experiment_configs = [
+            # === 第一期：微弱 Q 引导探雷 (经评估发现 Q 权重被 BC 淹没，表现为纯模仿) ===
+            # {"name": "DM1_Zero_Q", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            # {"name": "DM2_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "episodes": 400},
+            # {"name": "DM3_Gentle_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
+            # {"name": "DM4_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
+
+            # === 第二期：寻找相变点 (Phase Transition) 跨量级 Q 引导突围 ===
+            # 目的：强行放大 Q-weight，观察扩散网络何时撕裂 BC 安全护甲，从“保守避让”转变为“激进寻隙”。
+            {"name": "DM5_Mild_Transition", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 破冰试探：0.1 梯度干预
+            {"name": "DM6_Moderate_Override", "bc_epochs": 50, "q_weight": 0.5, "lr": 3e-4, "episodes": 400}, # 中度干预：预期均速开始攀升
+            {"name": "DM7_Strong_Override", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},   # 强力干预：RL 与 BC 的正面对抗
+            {"name": "DM8_Extreme_Domination", "bc_epochs": 50, "q_weight": 2.0, "lr": 3e-4, "episodes": 400},# 极限干预：预期存活率断崖，寻找生存极限
+        ]
+
+        # 动态判定：根据终端输入，无缝切换任务队列
+        active_configs = merge_experiment_configs if TARGET_ENV == "merge-v0" else experiment_configs
+
         exp_index = 0
-        total_exps = len(experiment_configs)
+        total_exps = len(active_configs)
 
         # 🚨 核心修复：跑完即停，绝不恋战。删除了之前的扩展逻辑。
         while exp_index < total_exps:
@@ -358,22 +413,25 @@ if __name__ == "__main__":
                 break
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            config = experiment_configs[exp_index]
+            config = active_configs[exp_index]
+            
+            # 聚合实验代号生成
+            run_name = f"DiffSAC_{config['name']}_{current_time.replace('-', '').replace(':', '').replace(' ', '_')}"
 
             print(f"\n==================================================")
             print(f"🚀 [进度 {exp_index + 1}/{total_exps}] 开始执行实验组: {config['name']}")
+            print(f"📁 聚合存档代号: {run_name}")
             print(f"⏰ 当前时间: {current_time}")
             print(f"📊 参数配置: {config}")
             print(f"==================================================")
 
-            # 执行该组参数的离线 BC
-            pretrained_model_path = train_diffusion_bc(
-                data_path=data_path,
-                env_name=TARGET_ENV,
-                num_epochs=config["bc_epochs"],
-                batch_size=256,
-                learning_rate=config["lr"]
-            )
+            bc_kwargs = {
+                "data_path": data_path, "env_name": TARGET_ENV,
+                "num_epochs": config["bc_epochs"], "batch_size": 256, "learning_rate": config["lr"]
+            }
+            if "run_name" in inspect.signature(train_diffusion_bc).parameters:
+                bc_kwargs["run_name"] = run_name
+            pretrained_model_path = train_diffusion_bc(**bc_kwargs)
             clear_gpu_memory()
 
             # 执行该组参数的在线微调
@@ -384,7 +442,8 @@ if __name__ == "__main__":
                 max_episodes=config["episodes"],
                 batch_size=256,
                 q_weight=config["q_weight"],
-                lr=config["lr"]
+                lr=config["lr"],
+                run_name=run_name
             )
             clear_gpu_memory()
 
