@@ -29,13 +29,14 @@ def main():
     replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(2e5))
     agent = SACAgent(state_dim, action_dim, action_scale=max_action, lr=3e-4)
     
+    config_name = "H1_Base_Highway"
     # 动态生成本次运行的唯一标识符
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = f"SAC_{timestamp}" # 例如：SAC_20231027_103045
+    run_id = f"SAC_{config_name}_{timestamp}"
 
     # 使用绝对路径
     base_output_dir = os.path.join(PROJECT_ROOT, "outputs")
-    logger = Logger(log_dir=os.path.join(base_output_dir, env_name, "logs"), env_name=run_id)
+    logger = Logger(log_dir=os.path.join(base_output_dir, env_name, "logs"), env_name=config_name)
 
     model_save_dir = os.path.join(base_output_dir, env_name, "models", run_id)
     os.makedirs(model_save_dir, exist_ok=True)

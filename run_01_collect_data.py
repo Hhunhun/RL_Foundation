@@ -134,11 +134,11 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             elif mode == 2:
                 # Mode 2 逻辑：神仙局必须同时满足【不撞车】且【均速 > 22.0】
                     if env_name == "merge-v0":
-                        if not crashed and mean_speed > 18.0: # Merge 的速度要求稍微放宽，避免死循环
+                        if not crashed and mean_speed > 19.5: # 🚨 拔高门槛：专门榨取 M3 (激进专家) 的极限微操破局数据
                             accept_episode = True
                             reason = f"激进破局(均速:{mean_speed:.1f})"
                         else:
-                            reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>18.0)"
+                            reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>19.5)"
                     else:
                         if not crashed and mean_speed > 22.0:
                             accept_episode = True
@@ -173,11 +173,12 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
     # 根据采集模式和当前时间生成专属的存档目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # 自动解析专家模型的名称，让数据集名字更具可读性
+    # 自动解析专家模型的短代号 (例如从 SAC_M4_Safety_First 提取出 M4)
     model_dir_name = os.path.basename(os.path.dirname(model_path))
-    match = re.search(r'SAC_(.*?)_\d{8}', model_dir_name)
-    if match:
-        source_name = match.group(1)
+    # 匹配 SAC_ 后面紧跟的字母+数字组合
+    short_match = re.search(r'SAC_([a-zA-Z0-9]+)_', model_dir_name)
+    if short_match:
+        source_name = short_match.group(1)
     else:
         source_name = "Expert"
         
@@ -239,11 +240,11 @@ if __name__ == "__main__":
 
     # 🚨 根据终端选择的环境，动态隔离并加载对应的 SAC 专家模型路径
     if target_env == "merge-v0":
-        # Merge 环境：使用 M8 作为保守专家 (Mode 1)，M4 作为激进/效率专家 (Mode 2)
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M8_Ultimate_Merge_20260421_023258", "sac_merge_final.pth")
-        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 动态匹配 M8 的训练环境
-        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
-        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 动态匹配 M4 的训练环境
+        # Merge 环境：M4 稳健安全专家 (Mode 1)，M3 激进寻隙专家 (Mode 2)
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 精准匹配 M4 训练时的观测分布
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M3_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
+        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]} # 🚨 必须使用 [20, 30] 才能让 M3 不产生速度幻觉
     else:
         # Highway 环境：使用过去的经典权重
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")

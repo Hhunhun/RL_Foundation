@@ -37,8 +37,9 @@ def test_env_pipeline(env_name):
         # ==========================================
         print("\n>>> [2/6] 测试统一评估模块 (SAC 模式)...")
         eval_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "eval_results", "dummy_test")
+        sac_model_id = "M0_Test" if env_name == "merge-v0" else "H0_Test"
         evaluate_single_model(
-            model_id=f"SAC_{env_name}_Test",
+            model_id=sac_model_id,
             model_path=sac_model_path,
             display_label="SAC 冒烟测试",
             env_name=env_name,
@@ -98,8 +99,9 @@ def test_env_pipeline(env_name):
         # 6. 测试 Diff-SAC 评估模块 (含归一化器)
         # ==========================================
         print("\n>>> [6/6] 测试统一评估模块 (Diff-SAC 模式)...")
+        diff_model_id = "DM0_Test" if env_name == "merge-v0" else "DH0_Test"
         evaluate_single_model(
-            model_id=f"Diff_{env_name}_Test",
+            model_id=diff_model_id,
             model_path=bc_model_path,
             display_label="Diff-SAC 冒烟测试",
             env_name=env_name,
