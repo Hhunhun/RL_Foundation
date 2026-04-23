@@ -86,11 +86,14 @@ class DiffMergeAVControlWrapper(gym.Wrapper):
         is_sideways = abs(ego.heading) > 0.4
         is_reverse = ego_speed_vx < -1.0
 
-        if not self.is_eval:
-            if crashed or is_out_of_road or is_not_on_road or is_sideways or is_reverse:
+        # 🚨 [核心修复] 物理死刑（如倒车、横摆失控）必须在任何模式下绝对生效！
+        # 防止高 Q 权重发癫的模型在评估时拿到“免死金牌”从而出现全程倒车的灵异现象。
+        if crashed or is_out_of_road or is_not_on_road or is_sideways or is_reverse:
+            terminated = True
+            if not self.is_eval:
                 reward = -10.0
-                terminated = True
-            else:
+        else:
+            if not self.is_eval:
                 # 原生任务中，主要依靠速度奖励和存活奖励
                 base_reward = 1.0
                 speed_reward = min((ego_speed_vx - 15.0) / 10.0, 1.0) if ego_speed_vx >= 15.0 else -0.1
@@ -126,27 +129,32 @@ def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False
             ego = unwrapped_env.vehicle
             road = unwrapped_env.road
             
+            # =========================================================
+            # 🎲 [TTC 动态抖动 (Jittering)]
+            # 提取被当前环境 Seed 严格控制的底层随机数生成器。
+            # 引入位置和速度的微小偏移，彻底粉碎 1v1 纯净决斗的同质化过拟合，
+            # 同时保证同一个 Seed 下的评估考题永远一模一样。
+            # =========================================================
+            np_random = unwrapped_env.np_random
+            ego_pos_jitter = np_random.uniform(-5.0, 5.0)
+            ego_spd_jitter = np_random.uniform(-2.0, 2.0)
+            npc_pos_jitter = np_random.uniform(-5.0, 5.0)
+            npc_spd_jitter = np_random.uniform(-2.0, 2.0)
+
             # [主车设定]
-            # 锁定自车在右侧主路车道 ("a", "b", 1)，初始位置 x=30m，起步速度 25m/s
-            # 假设汇入口 (Merge Point) 位于 x=130m 处
-            # 主车到达汇入口所需时间 (TTC) = (130 - 30) / 25 = 4.0 秒
             ego.lane_index = ("a", "b", 1)
             lane_ego = road.network.get_lane(("a", "b", 1))
-            ego.position = lane_ego.position(30, 0)
-            ego.speed = 25.0 
+            ego.position = lane_ego.position(30 + ego_pos_jitter, 0)
+            ego.speed = 25.0 + ego_spd_jitter
             
             # [匝道 NPC 设定]
-            # 找到匝道 ("j", "k", 0) 上的第一辆 NPC
             ramp_lane = road.network.get_lane(("j", "k", 0))
             ramp_vehicles = [v for v in road.vehicles if v is not ego and v.lane_index == ("j", "k", 0)]
             if ramp_vehicles:
                 npc = ramp_vehicles[0]
-                # 为了让 NPC 也恰好在 4.0 秒后到达汇入口 (构建完美碰撞航线)
-                # 若设定 NPC 速度为 20m/s，其需要行驶的距离为 20 * 4.0 = 80m
-                # 匝道总长 130m，所以 NPC 的初始位置应放置在 130 - 80 = 50m 处
-                npc.position = ramp_lane.position(50, 0)
-                npc.speed = 20.0
-                npc.target_speed = 25.0 # 赋予 NPC 合理的持续加速意图
+                npc.position = ramp_lane.position(50 + npc_pos_jitter, 0)
+                npc.speed = 20.0 + npc_spd_jitter
+                npc.target_speed = 25.0 + npc_spd_jitter # 保持持续加速意图
                 
             # [极度关键]：物理位置被我们强行篡改后，原有的 obs 张量就作废了
             # 必须调用环境底层方法，重新发射雷达射线获取最新的状态张量

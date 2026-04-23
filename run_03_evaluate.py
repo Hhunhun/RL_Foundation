@@ -40,12 +40,15 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 # ----------------------------------------------------
-# 🔒 定义全局评估基础种子，确保每次评估的 100 局路况绝对一致
+# 🔒 定义全局评估基础种子，并预先生成极度离散的测试种子库
 # ----------------------------------------------------
-EVAL_BASE_SEED = 42
+EVAL_BASE_SEED = 52
 random.seed(EVAL_BASE_SEED)
 np.random.seed(EVAL_BASE_SEED)
 torch.manual_seed(EVAL_BASE_SEED)
+
+# 预生成一个庞大的、极度离散的种子库，彻底打破连续整数种子可能带来的环境分布同质化
+MASTER_SEED_BANK = [random.randint(0, 9999999) for _ in range(10000)]
 
 def evaluate_single_model(model_id, model_path, display_label, env_name, eval_run_dir, num_episodes=100, record_video=True, expert_data_path=None, max_steps_per_episode=1000):
     """
@@ -57,8 +60,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     print(f"📁 权重路径: {os.path.abspath(model_path)}")
     print("=" * 60)
 
-    # 智能路由判定：根据 model_id 自动识别算法 (兼容老名字 Diff/diff 和新名字 DM)
-    is_diff = "Diff" in model_id or "diff" in model_id or "DM" in model_id
+    # 智能路由判定：根据 model_id 自动识别算法 (兼容老名字 Diff/diff 和新名字 DM / DH)
+    is_diff = "Diff" in model_id or "diff" in model_id or "DM" in model_id or "DH" in model_id
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 🚨 核心改造：根据模型类型和评估模式，动态选择算法包装器
@@ -105,8 +108,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
         env_video = RecordVideo(env_video, video_folder=video_dir, name_prefix=f"{display_label.replace(' ', '_')}_eval") # 使用 display_label 作为视频前缀
 
         for ep in range(2):
-            # 🔒 固定每局的种子，保证所有模型录像时面对的交通流是同一个平行宇宙
-            eval_seed = EVAL_BASE_SEED + ep
+            # 🔒 从预生成的离散种子库中抽取种子，保证每次录像面对的路况极具多样性且完全公平
+            eval_seed = MASTER_SEED_BANK[ep]
             state, _ = env_video.reset(seed=eval_seed)
             ep_steps = 0
             while True:
@@ -124,6 +127,11 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                 ep_steps += 1
                 ego_speed = info.get("ego_speed_vx", 0.0)
 
+                # 🚨 [核心修复] 为视频录制阶段同步添加 100 步强制截断保护
+                # 防止高 Q 权重下的模型 (如 DM6) 发癫加速到 40m/s 冲入虚空导致无限死循环
+                if env_name == "merge-v0" and ep_steps >= 100:
+                    truncated = True
+
                 print(f"\r├─ 录制 Ep {ep + 1}/2 | Step {ep_steps:3d} | 车速 vx: {ego_speed:5.2f} m/s", end="")
                 if terminated or truncated:
                     # 🚨 物理探针：区分出界完赛与真实撞车
@@ -133,7 +141,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                             actual_crash = getattr(env_video.unwrapped.vehicle, "crashed", False)
                             is_sideways = abs(env_video.unwrapped.vehicle.heading) > 0.4
                             is_not_on_road = not getattr(env_video.unwrapped.vehicle, "on_road", True)
-                            is_crashed = actual_crash or is_sideways or is_not_on_road
+                            is_reverse = getattr(env_video.unwrapped.vehicle, "speed", 0) < -1.0
+                            is_crashed = actual_crash or is_sideways or is_not_on_road or is_reverse
                         except Exception: pass
                     print(f"\n└─ 录像完成: {'💥 撞车/越野' if is_crashed else '🏁 完赛'}")
                     break
@@ -147,8 +156,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     metrics = {'rewards': [], 'lengths': [], 'speeds': [], 'crashes': 0}
 
     for ep in range(num_episodes):
-        # 🔒 固定每局的大样本测试种子，确保模型之间的对比是绝对公平的控制变量法
-        eval_seed = EVAL_BASE_SEED + ep
+        # 🔒 抽取离散测试种子，通过引入剧烈的初始态波动，彻底粉碎单一种子池导致的过拟合陷阱
+        eval_seed = MASTER_SEED_BANK[ep + 10] # 偏移 10，避开上面录像用过的种子
         state, _ = env_eval.reset(seed=eval_seed)
         ep_reward, ep_steps, ep_speeds = 0, 0, []
 
@@ -188,7 +197,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                         actual_crash = getattr(env_eval.unwrapped.vehicle, "crashed", False)
                         is_sideways = abs(env_eval.unwrapped.vehicle.heading) > 0.4
                         is_not_on_road = not getattr(env_eval.unwrapped.vehicle, "on_road", True)
-                        is_crashed = actual_crash or is_sideways or is_not_on_road
+                        is_reverse = getattr(env_eval.unwrapped.vehicle, "speed", 0) < -1.0
+                        is_crashed = actual_crash or is_sideways or is_not_on_road or is_reverse
                     except Exception: pass
 
                 if is_crashed:
@@ -362,139 +372,78 @@ if __name__ == "__main__":
         # 🚨 注意：请将这里的路径替换为您真实的 merge 专家数据和模型路径！
         # 评估 Diff-SAC 时，必须提供专家数据集路径以初始化归一化器 (Normalizer)
         EXPERT_DATA_PATH = "data/expert_data/merge-v0/dataset_base_20260422_014135/expert_transitions.npz"
-        models_to_evaluate = { # 新结构
-            # === 第一期基础实验 (可按需注释屏蔽) ===
-            #"M1_Run1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_160138/sac_merge_ep1100.pth", "display_name": "M1 基础生存 (Run 1)"},
-            #"M1_Run2": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_162820/sac_merge_ep1000.pth", "display_name": "M1 基础生存 (Run 2)"},
-            #"M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260416_165816/sac_merge_final.pth", "display_name": "M1 基础生存"},
-            #"M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260416_225728/sac_merge_final.pth", "display_name": "M2 高效平滑"},
-            #"M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260417_000130/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
-            
-            # === 第二期生存率消融实验 ===
-            #"M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260417_034523/sac_merge_final.pth", "display_name": "M4 安全至上"},
-            #"M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260417_050417/sac_merge_final.pth", "display_name": "M5 耐心等待"},
-            #"M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260417_062309/sac_merge_final.pth", "display_name": "M6 极限死刑"},
-            #"M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260417_074217/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
-            #"M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260417_094059/sac_merge_final.pth", "display_name": "M8 终极汇入"},
-
+        models_to_evaluate = {
             # === 第一期基础实验（加入TTC） ===
             #"M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260420_150323/sac_merge_final.pth", "display_name": "M1 基础生存"},
             #"M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "display_name": "M2 高效平滑"},
-            "M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
-            "M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M4 安全至上"},
+            #"M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
+            #"M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M4 安全至上"},
             #"M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260420_220108/sac_merge_final.pth", "display_name": "M5 耐心等待"},
             #"M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "display_name": "M6 极限死刑"},
             #"M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
-            "M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M8 终极汇入"},
+            #"M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M8 终极汇入"},
 
-            # === diff-SAC实验 ===
-            "DM1": {"path": "outputs/merge-v0/models/DiffSAC_DM1_Zero_Q_20260422_020015/online_finetune/diff_sac_ep400.pth", "display_name": "DM1 纯模仿"},
-            "DM2": {"path": "outputs/merge-v0/models/DiffSAC_DM2_Micro_Q_20260422_021730/online_finetune/diff_sac_ep400.pth", "display_name": "DM2 保守试探"},
+            # === 第一期 diff-SAC 实验 ===
+            #"DM1": {"path": "outputs/merge-v0/models/DiffSAC_DM1_Zero_Q_20260422_020015/online_finetune/diff_sac_ep400.pth", "display_name": "DM1 纯模仿"},
+            #"DM2": {"path": "outputs/merge-v0/models/DiffSAC_DM2_Micro_Q_20260422_021730/online_finetune/diff_sac_ep400.pth", "display_name": "DM2 保守试探"},
             "DM3": {"path": "outputs/merge-v0/models/DiffSAC_DM3_Gentle_Q_20260422_023433/online_finetune/diff_sac_ep400.pth", "display_name": "DM3 微弱提速"},
             "DM4": {"path": "outputs/merge-v0/models/DiffSAC_DM4_Standard_Q_20260422_025352/online_finetune/diff_sac_ep400.pth", "display_name": "DM4 激进提速"},
 
+            # === 第二期 diff-SAC 实验 ===
+            #"DM5": {"path": "outputs/merge-v0/models/DiffSAC_DM5_Mild_Transition_20260423_030738/online_finetune/diff_sac_ep400.pth", "display_name": "DM5 破冰试探"},
+            #"DM6": {"path": "outputs/merge-v0/models/DiffSAC_DM6_Moderate_Override_20260423_032715/online_finetune/diff_sac_ep400.pth", "display_name": "DM6 中度干预"},
+            #"DM7": {"path": "outputs/merge-v0/models/DiffSAC_DM7_Strong_Override_20260423_033850/online_finetune/diff_sac_ep400.pth", "display_name": "DM7 强力干预"},
+            #"DM8": {"path": "outputs/merge-v0/models/DiffSAC_DM8_Extreme_Domination_20260423_034901/online_finetune/diff_sac_ep400.pth", "display_name": "DM8 极限干预"},
+
+            # === 第三期 diff-SAC 实验 (基于 100% M4 专家数据) ===
+            "DM9": {"path": "outputs/merge-v0/models/DiffSAC_DM9_M4_Prior_Only_20260423_184425/online_finetune/diff_sac_ep400.pth", "display_name": "DM9 M4纯模仿"},
+            "DM10": {"path": "outputs/merge-v0/models/DiffSAC_DM10_M4_Standard_Q_20260423_190251/online_finetune/diff_sac_ep400.pth", "display_name": "DM10 M4弱度干预"},
+            "DM11": {"path": "outputs/merge-v0/models/DiffSAC_DM11_M4_Strong_Q_20260423_191253/online_finetune/diff_sac_ep400.pth", "display_name": "DM11 M4强力干预"},
+            "DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
-        models_to_evaluate = { # 新结构
-        # v1.0: 没有任何约束，表现为“原地发癫”和“极度胆小”
-        #"SAC_v1": {"path": "outputs/models/highway-v0_SAC_20260329_150543/sac_highway_final.pth", "display_name": "v1.0 无约束 SAC"},
+        models_to_evaluate = {
+        #"H1": {"path": "outputs/models/SAC_H1_20260329_150543/sac_highway_final.pth", "display_name": "H1 无约束 SAC"},
+        #"H2": {"path": "outputs/models/SAC_H2_20260329_185751/sac_highway_final.pth", "display_name": "H2 越野飙车 SAC"},
+        #"H3": {"path": "outputs/models/SAC_H3_20260330_010914/sac_highway_final.pth", "display_name": "H3 LQR 欠拟合 SAC"},
+        #"H5": {"path": "outputs/models/SAC_H5_20260330_135449/sac_highway_final.pth", "display_name": "H5 安全保守 SAC"},
+        #"H6": {"path": "outputs/models/SAC_H6_20260330_213300/sac_highway_final.pth", "display_name": "H6 高效超车 SAC"},
 
-        # v2.0: 强化了速度奖励但没关草地，表现为“草地飙车党”
-        #"SAC_v2": {"path": "outputs/models/highway-v0_SAC_20260329_185751/sac_highway_final.pth", "display_name": "v2.0 越野飙车 SAC"},
+        #"DH1": {"path": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "DH1 微弱 Q 引导"},
+        #"DH2": {"path": "outputs/models/DiffSAC_DH2_20260405_065603/diff_sac_ep400.pth", "display_name": "DH2 标准 Q 引导"},
+        #"DH3": {"path": "outputs/models/DiffSAC_DH3_20260405_101704/diff_sac_ep400.pth", "display_name": "DH3 强力 Q 引导"},
+        #"DH4": {"path": "outputs/models/DiffSAC_DH4_20260405_141352/diff_sac_ep500.pth", "display_name": "DH4 降学习率长跑"},
 
-        # v3.0: 开启了草地死刑和LQR惩罚，但因局数制导致“严重欠拟合/早产”
-        #"SAC_v3": {"path": "outputs/models/highway-v0_SAC_20260330_010914/sac_highway_final.pth", "display_name": "v3.0 LQR 欠拟合 SAC"},
+        #"DH5": {"path": "outputs/models/DiffSAC_DH5_20260406_023023/diff_sac_ep400.pth", "display_name": "DH5 极微引导"},
+        #"DH6": {"path": "outputs/models/DiffSAC_DH6_20260406_040052/diff_sac_ep400.pth", "display_name": "DH6 铁壁底座"},
+        #"DH7": {"path": "outputs/models/DiffSAC_DH7_20260406_052938/diff_sac_ep500.pth", "display_name": "DH7 冰封微调"},
+        #"DH8": {"path": "outputs/models/DiffSAC_DH8_20260406_064236/diff_sac_ep400.pth", "display_name": "DH8 零引导对照"},
 
-        # v5.0: 锁死了倒车和草地，并练够12万步，表现为求稳的“法规级专家”
-        #"SAC_v5": {"path": "outputs/models/highway-v0_SAC_20260330_135449/sac_highway_final.pth", "display_name": "v5.0 安全保守 SAC"},
+        #"DH9": {"path": "outputs/models/DiffSAC_DH9_20260406_153903/diff_sac_ep500.pth", "display_name": "DH9 终极防御底座"},
+        #"DH10": {"path": "outputs/models/DiffSAC_DH10_20260406_172128/diff_sac_ep500.pth", "display_name": "DH10 加速冰封"},
+        #"DH11": {"path": "outputs/models/DiffSAC_DH11_20260406_211102/diff_sac_ep400.pth", "display_name": "DH11 极限微丝引导"},
+        #"DH12": {"path": "outputs/models/DiffSAC_DH12_20260407_013017/diff_sac_ep800.pth", "display_name": "DH12 冰封马拉松"},
 
-        # v6.0: 引入绝对转向约束和高速重塑，表现为敢踩油门的“高效超车专家”
-        #"SAC_v6": {"path": "outputs/models/highway-v0_SAC_20260330_213300/sac_highway_final.pth", "display_name": "v6.0 高效超车 SAC"},
+        #"DH13": {"path": "outputs/models/DiffSAC_DH13_20260407_071544/diff_sac_ep400.pth", "display_name": "DH13 终极无坚不摧"},
+        #"DH14": {"path": "outputs/models/DiffSAC_DH14_20260407_110205/diff_sac_ep400.pth", "display_name": "DH14 厚甲利刃"},
+        #"DH15": {"path": "outputs/models/DiffSAC_DH15_20260407_140041/diff_sac_ep400.pth", "display_name": "DH15 深度 BC 对照"},
+        #"DH16": {"path": "outputs/models/DiffSAC_DH16_20260407_170756/diff_sac_ep600.pth", "display_name": "DH16 微丝引导马拉松"},
 
-        # Diff-Exp1: 微弱 Q 引导 (q=0.01)，高度依赖专家先验，理论上的“无冕之王/最稳老司机”
-        #"Diff_Exp1": {"path": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "Diff-Exp1 微弱 Q 引导"},
+        #"DH17": {"path": "outputs/models/DiffSAC_DH17_20260408_141756/diff_sac_ep400.pth", "display_name": "DH17 混合 BC 对照"},
+        #"DH18": {"path": "outputs/models/DiffSAC_DH18_20260408_155039/diff_sac_ep400.pth", "display_name": "DH18 混合微丝引导"},
+        #"DH19": {"path": "outputs/models/DiffSAC_DH19_20260408_190001/diff_sac_ep400.pth", "display_name": "DH19 混合厚底座"},
+        #"DH20": {"path": "outputs/models/DiffSAC_DH20_20260408_224554/diff_sac_ep600.pth", "display_name": "DH20 混合马拉松"},
 
-        # Diff-Exp2: 标准 Q 引导 (q=0.05)，模仿与自主探索的平衡，偶尔会在超车时发生失误
-        #"Diff_Exp2": {"path": "outputs/models/highway_DiffSAC_20260405_065603/diff_sac_ep400.pth", "display_name": "Diff-Exp2 标准 Q 引导"},
+        #"DH21": {"path": "outputs/models/DiffSAC_DH21_20260410_031928/diff_sac_ep600.pth", "display_name": "DH21 黄金比例马拉松"},
+        #"DH22": {"path": "outputs/models/DiffSAC_DH22_20260413_031458/diff_sac_ep400.pth", "display_name": "DH22 智能 BC 对照"},
+        #"DH23": {"path": "outputs/models/DiffSAC_DH23_20260413_041749/diff_sac_ep400.pth", "display_name": "DH23 智能微丝引导"},
+        #"DH24": {"path": "outputs/models/DiffSAC_DH24_20260413_052105/diff_sac_ep400.pth", "display_name": "DH24 智能厚底座"},
 
-        # Diff-Exp3: 强力 Q 引导 (q=0.10)，完全陷入过估计陷阱，表现为“理论满分，实操零分”的翻车司机
-        #"Diff_Exp3": {"path": "outputs/models/highway_DiffSAC_20260405_101704/diff_sac_ep400.pth", "display_name": "Diff-Exp3 强力 Q 引导"},
+        #"DH25": {"path": "outputs/models/DiffSAC_DH25_20260413_062853/diff_sac_ep600.pth", "display_name": "DH25 智能混合马拉松"},
 
-        # Diff-Exp4: 降学习率长跑 (lr=1e-4)，企图驯服高方差，但依然未能逃脱 OOD 陷阱
-        #"Diff_Exp4": {"path": "outputs/models/highway_DiffSAC_20260405_141352/diff_sac_ep500.pth", "display_name": "Diff-Exp4 降学习率长跑"},
-
-        # Diff-Exp5: 极微引导 (q=0.005)，大幅削弱 RL 话语权，成功将 Actor 拉回安全边界，表现为“试探边界的行者”
-        #"Diff_Exp5": {"path": "outputs/models/highway_DiffSAC_20260406_023023/diff_sac_ep400.pth", "display_name": "Diff-Exp5 极微引导"},
-
-        # Diff-Exp6: 铁壁底座 (bc_epochs=120, q=0.05)，企图用超长预训练对抗分布偏移，但安全底线依然被 RL 粉碎的“反面教材”
-        #"Diff_Exp6": {"path": "outputs/models/highway_DiffSAC_20260406_040052/diff_sac_ep400.pth", "display_name": "Diff-Exp6 铁壁底座"},
-
-        # Diff-Exp7: 冰封微调 (q=0.005, lr=5e-5)，通过极致的保守实现安全与效率的完美平衡，理论上的“SOTA 冠军候选人”
-        #"Diff_Exp7": {"path": "outputs/models/highway_DiffSAC_20260406_052938/diff_sac_ep500.pth", "display_name": "Diff-Exp7 冰封微调"},
-
-        # Diff-Exp8: 零引导对照组 (q=0.0)，彻底关闭 Critic，退化为纯行为克隆的“循规蹈矩模仿者”，用于证明 RL 的必要性
-        #"Diff_Exp8": {"path": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth", "display_name": "Diff-Exp8 零引导对照"},
-
-        # Diff-Exp9: 终极防御底座 (bc=120, q=0.005, lr=5e-5)，结合最厚装甲与最温柔微调，成功压制了在线微调初期的震荡
-        #"Diff_Exp9": {"path": "outputs/models/highway_DiffSAC_20260406_153903/diff_sac_ep500.pth", "display_name": "Diff-Exp9 终极防御底座"},
-
-        # Diff-Exp10: 加速冰封 (q=0.005, lr=1e-4)，在微弱引导下适度提升学习率，在保证不崩溃的前提下提升了环境适应效率
-        #"Diff_Exp10": {"path": "outputs/models/highway_DiffSAC_20260406_172128/diff_sac_ep500.pth", "display_name": "Diff-Exp10 加速冰封"},
-
-        # Diff-Exp11: 极限微丝引导 (q=0.001)，进一步压低 RL 权重，Q值有效受到抑制并贴近专家分布，生存下限得到极大保障
-        #"Diff_Exp11": {"path": "outputs/models/highway_DiffSAC_20260406_211102/diff_sac_ep400.pth", "display_name": "Diff-Exp11 极限微丝引导"},
-
-        # Diff-Exp12: 冰封马拉松 (ep=800)，进行超长周期的极限保守微调，Q值平滑攀升且全程未发生延迟崩溃，验证了长期稳定性
-        #"Diff_Exp12": {"path": "outputs/models/highway_DiffSAC_20260407_013017/diff_sac_ep800.pth", "display_name": "Diff-Exp12 冰封马拉松"},
-
-        # Diff-Exp13: 终极无坚不摧 (BC=120, q=0.001, lr=3e-4)，最厚护甲与最轻引导的黄金融合，Actor Loss 平稳缓降，预期防守反击 SOTA
-        #"Diff_Exp13": {"path": "outputs/models/highway_DiffSAC_20260407_071544/diff_sac_ep400.pth", "display_name": "Diff-Exp13 终极无坚不摧"},
-
-        # Diff-Exp14: 厚甲利刃 (BC=120, q=0.01, lr=3e-4)，更高 Q 引导导致 Actor Loss 显著下探但未崩溃，Q 值全场最高，预期均速 SOTA
-        #"Diff_Exp14": {"path": "outputs/models/highway_DiffSAC_20260407_110205/diff_sac_ep400.pth", "display_name": "Diff-Exp14 厚甲利刃"},
-
-        # Diff-Exp15: 纯粹克隆的物理极限 (BC=120, q=0.0, lr=3e-4)，彻底关闭引导，Actor Loss 最平缓，提供 120 轮先验下的最高安全基准
-        #"Diff_Exp15": {"path": "outputs/models/highway_DiffSAC_20260407_140041/diff_sac_ep400.pth", "display_name": "Diff-Exp15 深度 BC 对照"},
-
-        # Diff-Exp16: 微丝引导马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，第三期冠军参数的加长版验证，600 局探索全程平滑无延迟崩溃
-        #"Diff_Exp16": {"path": "outputs/models/highway_DiffSAC_20260407_170756/diff_sac_ep600.pth", "display_name": "Diff-Exp16 微丝引导马拉松"},
-
-        # Diff-Exp17: 纯混合克隆基准 (BC=50, q=0.0, lr=3e-4, ep=400)，完全关闭 Q 引导，验证纯靠 v5+v6 神仙数据喂出来的底层模仿上限
-        #"Diff_Exp17": {"path": "outputs/models/highway_DiffSAC_20260408_141756/diff_sac_ep400.pth", "display_name": "Diff-Exp17 混合 BC 对照"},
-
-        # Diff-Exp18: 混合流形冠军 (BC=50, q=0.001, lr=3e-4, ep=400)，在混合神仙数据上叠加极微丝引导，冲击均速与安全性双重 SOTA 的绝对主力
-        #"Diff_Exp18": {"path": "outputs/models/highway_DiffSAC_20260408_155039/diff_sac_ep400.pth", "display_name": "Diff-Exp18 混合微丝引导"},
-
-        # Diff-Exp19: 数据容量扩充测试 (BC=80, q=0.001, lr=3e-4, ep=400)，将预训练适度加厚至 80 轮，测试其能否更好地消化充满矛盾（保守与极速）的复杂混合流形
-        #"Diff_Exp19": {"path": "outputs/models/highway_DiffSAC_20260408_190001/diff_sac_ep400.pth", "display_name": "Diff-Exp19 混合厚底座"},
-
-        # Diff-Exp20: 混合马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，冠军参数的加长版在线探索，验证更丰富的混合数据在长周期微调下的最终爆发力
-        #"Diff_Exp20": {"path": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth", "display_name": "Diff-Exp20 混合马拉松"},
-
-        # Diff-Exp21: 黄金比例马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，采用 80% 保守底座与 20% 激进利刃的黄金数据融合，孤注一掷冲击存活率 80%+ 与均速 22.0+ 的双重 SOTA
-        #"Diff_Exp21": {"path": "outputs/models/highway_DiffSAC_20260408_224554/diff_sac_ep600.pth", "display_name": "Diff-Exp21 黄金比例马拉松"},
-
-        # Diff-Exp22: 智能混合克隆基准 (BC=50, q=0.0, lr=3e-4, ep=400)，完全关闭 Q 引导，验证纯靠“去伪存真”的蒸馏数据喂出来的底层模仿安全下限
-        #"Diff_Exp22": {"path": "outputs/models/highway_DiffSAC_20260413_031458/diff_sac_ep400.pth", "display_name": "Diff-Exp22 智能 BC 对照"},
-
-        # Diff-Exp23: 智能混合微导 (BC=50, q=0.001, lr=3e-4, ep=400)，在纯净蒸馏数据上叠加微丝引导，观察剥离了“变道毒药”的激进数据能否被安全激发
-        #"Diff_Exp23": {"path": "outputs/models/highway_DiffSAC_20260413_041749/diff_sac_ep400.pth", "display_name": "Diff-Exp23 智能微丝引导"},
-
-        # Diff-Exp24: 智能混合厚底座 (BC=80, q=0.001, lr=3e-4, ep=400)，将预训练适度加厚至 80 轮，巩固 90:10 智能数据的肌肉记忆
-        #"Diff_Exp24": {"path": "outputs/models/highway_DiffSAC_20260413_052105/diff_sac_ep400.pth", "display_name": "Diff-Exp24 智能厚底座"},
-
-        # Diff-Exp25: 智能混合马拉松 (BC=50, q=0.001, lr=3e-4, ep=600)，终极 SOTA 候选！长周期在线探索，验证 10% 提速血清在长程微调下的最终爆发力
-        #"Diff_Exp25": {"path": "outputs/models/highway_DiffSAC_20260413_062853/diff_sac_ep600.pth", "display_name": "Diff-Exp25 智能混合马拉松"},
-
-        # Diff-Exp8_Run1: 零引导对照组 (首次测试，q=0.0, ep=400)，Critic 曲线全程平滑
-        #"Diff_Exp8_Run1": {"path": "outputs/models/highway_DiffSAC_20260406_064236/diff_sac_ep400.pth", "display_name": "Diff-Exp8_Run1 零引导对照"},
-
-        # Diff-Exp8_Run2: 零引导对照组 (第二次测试，q=0.0, ep=500)，Critic 在后期发生震荡，但由于 q=0 被隔离
-        #"Diff_Exp8_Run2": {"path": "outputs/models/highway_DiffSAC_20260406_080556/diff_sac_ep500.pth", "display_name": "Diff-Exp8_Run2 零引导对照"},
-
-        # Diff-Exp8_Run3: 零引导对照组 (第三次测试，q=0.0, ep=500)，Critic 在中期发生剧烈脉冲，同样被 q=0 隔离
-        #"Diff_Exp8_Run3": {"path": "outputs/models/highway_DiffSAC_20260406_095201/diff_sac_ep500.pth", "display_name": "Diff-Exp8_Run3 零引导对照"},
+        #"DH8_Run2": {"path": "outputs/models/DiffSAC_DH8_Run2_20260406_080556/diff_sac_ep500.pth", "display_name": "DH8_Run2 零引导对照"},
+        #"DH8_Run3": {"path": "outputs/models/DiffSAC_DH8_Run3_20260406_095201/diff_sac_ep500.pth", "display_name": "DH8_Run3 零引导对照"},
         }
 
 
