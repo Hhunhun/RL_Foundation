@@ -12,5 +12,6 @@ env/
 
 # 强化学习训练产出物 (避免将几百MB的模型推送到 Git)
 outputs/
+old_scripts/aban_outputs/
 
 data/
