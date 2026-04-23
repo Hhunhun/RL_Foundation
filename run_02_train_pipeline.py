@@ -121,10 +121,11 @@ if __name__ == "__main__":
         # 🚨 [专家底座配置区] 支持动态适配不同的 SAC 模型
         # ==========================================
         EXPERT_CONFIGS = {
-            "M8_Ultimate": {
-                "model_path": os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M8_Ultimate_Merge_20260421_023258", "sac_merge_final.pth"),
-                "env_config": {"reward_speed_range": [15, 25]}
-            },
+            # 之前的 M8 专家基座 (已作为次优保守策略弃用，留作历史对照)
+            # "M8_Ultimate": {
+            #     "model_path": os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M8_Ultimate_Merge_20260421_023258", "sac_merge_final.pth"),
+            #     "env_config": {"reward_speed_range": [15, 25]}
+            # },
             "M4_Safety": {
                 "model_path": os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth"),
                 "env_config": {"reward_speed_range": [15, 25]}
@@ -133,12 +134,13 @@ if __name__ == "__main__":
             # "M2_Efficient": {"model_path": "...", "env_config": {"reward_speed_range": [18, 28]}}
         }
         
-        ACTIVE_EXPERT = "M8_Ultimate" # 👉 更改此处名称，即可一键切换底层专家和对应的环境速度区间
+        ACTIVE_EXPERT = "M4_Safety" # 👉 更改此处名称，即可一键切换底层专家和对应的环境速度区间
         SAFE_MODEL_PATH = EXPERT_CONFIGS[ACTIVE_EXPERT]["model_path"]
         SAFE_ENV_CONFIG = EXPERT_CONFIGS[ACTIVE_EXPERT]["env_config"]
         
         # 👉 已为您自动填入刚刚采集完美的 2 万步数据集名称
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_base_20260422_014135", "expert_transitions.npz")
+        # EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_base_20260422_014135", "expert_transitions.npz") # 之前的 M8 底座
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_M4_mode1_20260423_154904", "expert_transitions.npz") # 最新的 M4 底座
         TARGET_DATA_STEPS = 20000 # 按照最新要求，采集 1-2 万步即可
     else:
         # Highway 环境默认路径
@@ -179,7 +181,8 @@ if __name__ == "__main__":
         print("🛡️" * 30)
 
         # 极速参数：仅跑 2 个 Epoch 和 5 局游戏，通常两分钟内就能跑完
-        smoke_config = {"name": "DM0_Smoke_Test", "bc_epochs": 2, "q_weight": 0.05, "lr": 3e-4, "episodes": 5}
+        test_name = "DM0_Smoke_Test" if TARGET_ENV == "merge-v0" else "DH0_Smoke_Test"
+        smoke_config = {"name": test_name, "bc_epochs": 2, "q_weight": 0.05, "lr": 3e-4, "episodes": 5}
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"DiffSAC_{smoke_config['name']}_{current_time}"
         print(f"📊 运行参数: {smoke_config}")
@@ -219,8 +222,9 @@ if __name__ == "__main__":
         print("⚡" * 30)
 
         # 单次运行的特定参数 (当前锁定为实验四：长跑稳定验证)
+        single_name = "DM4_Stable_Long" if TARGET_ENV == "merge-v0" else "DH4_Stable_Long"
         single_config = {
-            "name": "DM4_Stable_Long",
+            "name": single_name,
             "bc_epochs": 80,  # 增加专家预训练轮次，打好基本功
             "q_weight": 0.05,  # 标准 Q 引导权重
             "lr": 1e-4,  # 🚨 降低学习率，追求更平稳的长期收敛
@@ -267,117 +271,40 @@ if __name__ == "__main__":
         # ==========================================
         # 第一期消融实验矩阵
         # ==========================================
-            # 实验组 1: 微弱引导 (Baseline)
-            # 偏保守，主要依靠 BC 模仿专家，Q 网络只提供极其微弱的避障建议
-            #{"name": "Exp_1_Gentle_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 2: 标准引导 (推荐配置)
-            # 模仿与自主学习的平衡点，最有可能跑出高均速的组合
-            #{"name": "Exp_2_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 3: 强力引导 (压力测试)
-            # 给 Critic 更大的话语权，探究平滑环境下的 Critic 是否会导致策略崩坏 (过估计陷阱)
-            #{"name": "Exp_3_Strong_Q", "bc_epochs": 50, "q_weight": 0.10, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 4: 降学习率长跑 (稳定测试)
-            # 用更低的学习率和更长的时间，探究算法的理论上限
-            #{"name": "Exp_4_Stable_Long", "bc_epochs": 80, "q_weight": 0.05, "lr": 1e-4, "episodes": 500},
+            #{"name": "DH1_Gentle_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH2_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH3_Strong_Q", "bc_epochs": 50, "q_weight": 0.10, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH4_Stable_Long", "bc_epochs": 80, "q_weight": 0.05, "lr": 1e-4, "episodes": 500},
         # ==========================================
         # 第二期消融实验矩阵 (探寻极简与极致稳健)
         # ==========================================
-            # 实验组 5: 极微引导 (Micro-Q)
-            # 既然 0.01 依然会引起震荡，我们直接将 Critic 的话语权再砍一半。
-            # 探究多小的 Q 值能在不破坏专家安全底线的情况下，依然起到提速作用。
-            #{"name": "Exp_5_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 6: 铁壁底座 (Overfit Prior)
-            # 疯狂增加离线预训练轮次（120 轮），让 Diffusion Actor 对专家动作产生“肌肉记忆”（过拟合）。
-            # 看看极其坚固的先验底座，能否抵御住标准 Q 值 (0.05) 的冲击。
-            #{"name": "Exp_6_Bulletproof_BC", "bc_epochs": 120, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 7: 冰封微调 (Frozen Fine-tuning)
-            # 结合最稳妥的参数：扎实的预训练 + 极小的 Q 引导 + 极低的学习率。
-            # 就像用小刀雕刻冰雕，一点一点地逼近物理极限，这是最有可能诞生 SOTA 的神仙组合。
-            #{"name": "Exp_7_Frozen_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "episodes": 500},
-
-            # 实验组 8: 零引导对照组 (Zero-Q Control)
-            # 极其重要的学术对照组！彻底关闭 Critic 的引导 (q=0.0)，在线阶段完全退化为基于混合经验池的自我模仿学习。
-            # 用于在论文中证明：我们加入强化学习 (RL) 到底有没有用？是不是光靠单纯的 BC 就能达到这个分数？
-            #{"name": "Exp_8_Zero_Q_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH5_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH6_Bulletproof_BC", "bc_epochs": 120, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH7_Frozen_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "episodes": 500},
+            #{"name": "DH8_Zero_Q_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
         # ==========================================
         # 第三期消融实验矩阵 (探寻 SOTA 的绝对极限)
         # ==========================================
-            # 实验组 9: 终极防御底座 (Deep BC + Frozen Finetune)
-            # Exp_6 证明了即使 120 轮 BC 也挡不住 q=0.05 的破坏。
-            # 那如果我们把最厚的装甲 (bc=120) 和最温柔的刀 (q=0.005, lr=5e-5) 结合呢？
-            # 探究最牢固的先验底座是否能让微调过程的方差降到绝对的 0。
-            #{"name": "Exp_9_Ultimate_Safe_SOTA", "bc_epochs": 120, "q_weight": 0.005, "lr": 5e-5, "episodes": 500},
-
-            # 实验组 10: 加速冰封 (Moderate LR + Micro Q)
-            # Exp_7 的 lr=5e-5 极其稳定，但可能收敛太慢。
-            # 我们把学习率稍微提一点点到 1e-4（Exp_4 证明它在 q=0.05 时会崩，但在 q=0.005 下安全吗？）。
-            # 测试在安全 Q 权重下，网络更新步长的安全上限。
-            #{"name": "Exp_10_Accelerated_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 1e-4, "episodes": 500},
-
-            # 实验组 11: 极限微丝引导 (Ultra-Micro Q)
-            # 探索 Exp_5 (q=0.005) 和 Exp_8 (q=0.0 纯 BC) 之间的地带。
-            # q=0.001 是一个极小的值，它到底是一缕能缓慢提速的清风，还是弱到跟完全关闭 (0.0) 没区别？
-            #{"name": "Exp_11_Ultra_Micro_Q", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 12: 冰封马拉松 (The Marathon)
-            # 既然 Exp_7 (q=0.005, lr=5e-5) 在 500 局结束时 Q 值还在稳步上升（没有平波），
-            # 说明它还没碰到真正的天花板！我们直接给它 800 局的超长时间。
-            # 探究：它是会最终收敛到一个超越所有人的史诗级高分，还是在长期积累后发生“延迟崩溃”？
-            #{"name": "Exp_12_Frozen_Marathon", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "episodes": 800},
-
+            #{"name": "DH9_Ultimate_Safe_SOTA", "bc_epochs": 120, "q_weight": 0.005, "lr": 5e-5, "episodes": 500},
+            #{"name": "DH10_Accelerated_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 1e-4, "episodes": 500},
+            #{"name": "DH11_Ultra_Micro_Q", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH12_Frozen_Marathon", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "episodes": 800},
         # ==========================================
         # 第四期消融实验矩阵 (黄金融合与终极天花板)
         # 核心策略：废弃极低学习率，融合最强先验 (BC=120) 与最优微导 (q=0.01~0.001)
         # ==========================================
-            # 实验组 13: 终极无坚不摧 (Heavy BC + Ultra-Micro Q)
-            # 结合 Exp_6 的“铁壁底座”与 Exp_11 的“最强微丝引导”。
-            # 用 120 轮预训练筑起绝对安全的防线，然后用极其轻柔的 q=0.001 进行提速。
-            # 这是理论上既能 100% 存活，又能打破均速上限的最优解。
-            #{"name": "Exp_13_Unbreakable_SOTA", "bc_epochs": 120, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 14: 厚甲利刃 (Heavy BC + Gentle Q)
-            # 结合 Exp_6 的“铁壁底座”与 第一期冠军 Exp_1 的“微弱引导”。
-            # q=0.01 的提速动力更足，我们看看 120 轮的厚重底座能否完美抗住这股更强的探索冲动。
-            #{"name": "Exp_14_Thick_Shield_Gentle_Q", "bc_epochs": 120, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 15: 纯粹克隆的物理极限 (Absolute BC Upper Bound)
-            # Exp_8 (BC=50, q=0.0) 表现很好，那如果我们不加任何 RL，纯靠 120 轮死记硬背呢？
-            # 这是一个极其关键的学术对照组，用于对比 Exp_13 和 14，证明在同等底座厚度下，RL 引导依然不可或缺。
-            #{"name": "Exp_15_Deep_BC_Control", "bc_epochs": 120, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 16: 微丝引导马拉松 (Ultra-Micro Q Marathon)
-            # Exp_11 (q=0.001, BC=50) 是第三期的冠军。
-            # 我们保持它的完美参数，但给它更长的在线交互时间（600局），探究极微弱引导在长期运行下会不会发生延迟崩溃，还是会爬上巅峰。
-            #{"name": "Exp_16_Ultra_Micro_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
-
+            #{"name": "DH13_Unbreakable_SOTA", "bc_epochs": 120, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH14_Thick_Shield_Gentle_Q", "bc_epochs": 120, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH15_Deep_BC_Control", "bc_epochs": 120, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            #{"name": "DH16_Ultra_Micro_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
         # ==========================================
         # 第五期实验矩阵 (混合数据集突围测试)
         # 核心目的：验证混合流形能否在保持高存活率的同时，打破 22 m/s 均速天花板
         # ==========================================
-            # 实验组 17: 纯混合克隆基准 (Mixed BC Control)
-            # 对应之前的 Exp_8。完全关闭 Q 引导 (q=0.0)。
-            # 这是极其关键的基准线！我们要看仅仅是“喂了更好的数据”，模型纯靠模仿，能否在速度上超越以前的 Exp_8。
-            # {"name": "Exp_17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 18: 混合流形冠军 (Mixed Ultra-Micro Q)
-            # 对应之前的全场最佳 Exp_11。
-            # 这是我们冲击最终 SOTA 的主力军！看看在混合神仙数据的加持下，0.001 的微弱提速能否完美兑现。
-            # {"name": "Exp_18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 19: 数据容量扩充测试 (Mixed Thicker Base)
-            # 这是一个新策略！因为混合数据集包含了“减速”和“极速”两种互相矛盾的动作，流形变复杂了。
-            # 50 轮预训练可能背不过这么复杂的规律，所以我们把底座适度加厚到 80 轮（但避开 120 轮的死板陷阱）。
-            # {"name": "Exp_19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
-
-            # 实验组 20: 混合马拉松 (Mixed Marathon)
-            # 对应之前的 Exp_16。
-            # 既然数据更丰富了，给它更长的在线交互时间（600局），看它能否彻底融会贯通，攀上均速的巅峰。
-            # {"name": "Exp_20_Mixed_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
+            # {"name": "DH17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            # {"name": "DH18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            # {"name": "DH19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "episodes": 400},
+            # {"name": "DH20_Mixed_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "episodes": 600},
         ]
 
         # ==========================================
@@ -393,10 +320,17 @@ if __name__ == "__main__":
 
             # === 第二期：寻找相变点 (Phase Transition) 跨量级 Q 引导突围 ===
             # 目的：强行放大 Q-weight，观察扩散网络何时撕裂 BC 安全护甲，从“保守避让”转变为“激进寻隙”。
-            {"name": "DM5_Mild_Transition", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 破冰试探：0.1 梯度干预
-            {"name": "DM6_Moderate_Override", "bc_epochs": 50, "q_weight": 0.5, "lr": 3e-4, "episodes": 400}, # 中度干预：预期均速开始攀升
-            {"name": "DM7_Strong_Override", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},   # 强力干预：RL 与 BC 的正面对抗
-            {"name": "DM8_Extreme_Domination", "bc_epochs": 50, "q_weight": 2.0, "lr": 3e-4, "episodes": 400},# 极限干预：预期存活率断崖，寻找生存极限
+            #{"name": "DM5_Mild_Transition", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 破冰试探：0.1 梯度干预
+            #{"name": "DM6_Moderate_Override", "bc_epochs": 50, "q_weight": 0.5, "lr": 3e-4, "episodes": 400}, # 中度干预：预期均速开始攀升
+            #{"name": "DM7_Strong_Override", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},   # 强力干预：RL 与 BC 的正面对抗
+            #{"name": "DM8_Extreme_Domination", "bc_epochs": 50, "q_weight": 2.0, "lr": 3e-4, "episodes": 400},# 极限干预：预期存活率断崖，寻找生存极限
+
+            # === 第三期 diff-SAC 实验 (基于 100% M4 稳健专家底座) ===
+            # 核心目的：探究更宽广的 M4 动作流形，能否承受住比 M8 更大的 Q 梯度冲击，推迟 OOD 崩溃点。
+            {"name": "DM9_M4_Prior_Only", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},   # 确立新基准：纯 BC 拟合 M4 专家，验证能否完美复刻 100% 存活率和 18.6 m/s 均速
+            {"name": "DM10_M4_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},  # 低烈度探测：在 M4 的开阔流形下，测试扩散模型对常规弱 Q 信号的敏感度
+            {"name": "DM11_M4_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},    # 强力博弈：Q 梯度深度介入，期望在不折损存活率的前提下，均速历史性突破 19.0 m/s
+            {"name": "DM12_M4_Extreme_Q", "bc_epochs": 50, "q_weight": 5.0, "lr": 3e-4, "episodes": 400},   # 极限突破：施加暴力大权重，探寻 M4 底座的“安全与效率”相变崩溃点
         ]
 
         # 动态判定：根据终端输入，无缝切换任务队列
