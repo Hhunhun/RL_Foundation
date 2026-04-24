@@ -1,10 +1,10 @@
 # RL Foundation - 自动驾驶强化学习流水线
 
-本项目是一个高度模块化、自动化的强化学习实验框架，专注于解决自动驾驶场景下的规控问题。目前已完美支持 **Highway (高速巡航)** 与 **Merge (匝道汇入)** 双测试场景，并集成了经典的 **Soft Actor-Critic (SAC)** 算法以及前沿的 **Diffusion-RL (基于扩散模型的强化学习)** 架构。
+本项目是一个高度模块化、自动化的强化学习实验框架，专注于解决自动驾驶场景下的规控问题。目前已完美支持 **Highway (高速巡航)**、**Merge (匝道汇入)** 与 **Racetrack (赛道过弯)** 三大测试场景，并集成了经典的 **Soft Actor-Critic (SAC)** 算法以及前沿的 **Diffusion-RL (基于扩散模型的强化学习)** 架构。
 
 ## ✨ 核心特性 (Key Features)
 
-- **双重复杂场景支持**: 动态适配 `highway-v0` 与 `merge-v0`，底层环境奖励与平滑约束(Jerk/Steering)高度可配置。
+- **三重复杂场景支持**: 动态适配 `highway-v0`, `merge-v0` 与 `racetrack-v0`，底层环境奖励、平滑约束(Jerk/Steering)以及物理边界截断高度可配置。
 - **SOTA 算法基座**: 
   - **SAC (Soft Actor-Critic)**: 用于构建极其稳定的法规级专家底座。
   - **Diff-SAC (Diffusion-SAC)**: 结合行为克隆(BC)与强化学习微调，突破传统 SAC 的均速与存活率瓶颈。
@@ -22,14 +22,16 @@ RL_Foundation/
 ├── run_02_train_pipeline.py        # [阶段二/三] 核心自动化训练调度器 (含通宵扫参模式)
 ├── run_03_evaluate.py              # [阶段四] 统一模型评估与可视化流水线
 │
-├── baseline_sac/                   # SAC 专家基线训练器 (分别对应 Highway 和 Merge)
+├── baseline_sac/                   # SAC 专家基线训练器 (分别对应三大环境)
 │   ├── main_highway.py
-│   └── main_merge.py
+│   ├── main_merge.py
+│   └── main_racetrack.py
 │
 ├── envs/                           # 环境工厂与包装器定义 (Environment Factory)
 │   ├── __init__.py                 # 动态环境路由
 │   ├── highway_wrapper.py          # 高速环境奖励塑形与状态展平
-│   └── merge_wrapper.py            # 汇入环境奖励塑形 (包含底层源码缺陷修复补丁)
+│   ├── merge_wrapper.py            # 汇入环境奖励塑形 (包含底层源码缺陷修复补丁)
+│   └── racetrack_wrapper.py        # 赛道环境奖励塑形与宽容度包装
 │
 ├── algorithms/                     # 算法大脑模块
 │   ├── sac/                        # 经典 SAC 实现
@@ -50,7 +52,8 @@ RL_Foundation/
     │   ├── models/                 # 网络权重文件 (.pth)
     │   ├── eval_results/           # 评估生成的图表、CSV 数据
     │   └── videos/                 # 评估生成的自动驾驶录像 (.mp4)
-    └── merge-v0/                   # 同上，环境严格隔离
+    ├── merge-v0/                   # 同上，环境严格隔离
+    └── racetrack-v0/               # 同上，新增的极限过弯赛道环境
 ```
 
 ## 🚀 标准工作流 (Workflow)
