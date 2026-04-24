@@ -6,7 +6,7 @@
 
 目前支持两种采集模式：
 [Mode 1] 保守底座采集：包含概率性行为抖动，过滤所有碰撞局，用于构建安全先验。
-[Mode 2] 极速神仙局采集：关闭抖动，过滤碰撞且强制要求回合均速 > 22.0 m/s，用于拓展流形上限。
+[Mode 2] 极速局采集：关闭抖动，过滤碰撞且强制要求回合均速 > 22.0 m/s，用于拓展流形上限。
 """
 
 import os
@@ -88,6 +88,8 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             # 🚨 [核心修复] 强制截断：避免车辆一直开到地图尽头掉进虚空，被误判为“出界/撞车”
             if env_name == "merge-v0" and ep_steps >= 100:
                 truncated = True
+            elif env_name == "racetrack-v0" and ep_steps >= 300:
+                truncated = True
 
             # 将这一步的数据暂存进当前局的缓存列表中
             ep_obs.append(state)
@@ -105,14 +107,26 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
                     # 🚨 [核心修复] 区分真假车祸，保护“极速超车”的神仙局
                     # Merge 道路极短，车辆如果加速超车，会在 100 步内冲出地图纵向尽头(out_of_road)，
                     # 此时底层会报 terminated=True。但这绝不是车祸，而是最高效的完赛！
-                    try:
-                        actual_crash = getattr(env.unwrapped.vehicle, "crashed", False)
-                        is_sideways = abs(env.unwrapped.vehicle.heading) > 0.4
-                        is_not_on_road = not getattr(env.unwrapped.vehicle, "on_road", True)
-                        
-                        crashed = actual_crash or is_sideways or is_not_on_road
-                    except Exception:
-                        crashed = True # 兜底逻辑
+                    if env_name == "merge-v0":
+                        try:
+                            actual_crash = getattr(env.unwrapped.vehicle, "crashed", False)
+                            is_sideways = abs(env.unwrapped.vehicle.heading) > 0.4
+                            is_not_on_road = not getattr(env.unwrapped.vehicle, "on_road", True)
+                            crashed = actual_crash or is_sideways or is_not_on_road
+                        except Exception:
+                            crashed = True
+                    elif env_name == "racetrack-v0":
+                        try:
+                            actual_crash = getattr(env.unwrapped.vehicle, "crashed", False)
+                            is_not_on_road = not getattr(env.unwrapped.vehicle, "on_road", True)
+                            crashed = actual_crash or is_not_on_road or info.get("crashed", False)
+                        except Exception:
+                            crashed = True
+                    else:
+                        try:
+                            crashed = getattr(env.unwrapped.vehicle, "crashed", False)
+                        except Exception:
+                            crashed = True # 兜底逻辑
                 break
 
         # 🚨 回合级淘汰机制 (Episode-level Filtering) 🚨
@@ -133,18 +147,24 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
                     reason = "发生碰撞/出界"
             elif mode == 2:
                 # Mode 2 逻辑：神仙局必须同时满足【不撞车】且【均速 > 22.0】
-                    if env_name == "merge-v0":
-                        if not crashed and mean_speed > 19.5: # 🚨 拔高门槛：专门榨取 M3 (激进专家) 的极限微操破局数据
-                            accept_episode = True
-                            reason = f"激进破局(均速:{mean_speed:.1f})"
-                        else:
-                            reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>19.5)"
+                if env_name == "merge-v0":
+                    if not crashed and mean_speed > 19.5: # 🚨 拔高门槛：专门榨取 M3 (激进专家) 的极限微操破局数据
+                        accept_episode = True
+                        reason = f"激进破局(均速:{mean_speed:.1f})"
                     else:
-                        if not crashed and mean_speed > 22.0:
-                            accept_episode = True
-                            reason = f"神仙局(均速:{mean_speed:.1f})"
-                        else:
-                            reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>22.0)"
+                        reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>19.5)"
+                elif env_name == "racetrack-v0":
+                    if not crashed and mean_speed > 20.0:
+                        accept_episode = True
+                        reason = f"极限切弯(均速:{mean_speed:.1f})"
+                    else:
+                        reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>20.0)"
+                else:
+                    if not crashed and mean_speed > 22.0:
+                        accept_episode = True
+                        reason = f"神仙局(均速:{mean_speed:.1f})"
+                    else:
+                        reason = f"撞车:{crashed}, 均速:{mean_speed:.2f}m/s 未达标(需>22.0)"
 
         # 执行数据并入或丢弃
         if accept_episode:
@@ -193,7 +213,7 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
     print(f"\n\n💾 数据集已完美保存至: {data_path}")
 
     # 🎬 新增：在数据集文件夹内同时渲染并保存几局专家视频，便于人类直接观察
-    if env_name == "merge-v0":
+    if env_name in ["merge-v0", "racetrack-v0"]:
         print(f"🎬 正在为您录制 3 局专家实况录像，以供直观检查数据质量...")
         video_dir = os.path.join(save_dir, "videos")
         rec_env = create_environment(env_name, is_eval=True, algo="sac", env_config=env_config)
@@ -206,7 +226,9 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
                 act = agent.select_action(obs, evaluate=True)
                 obs, _, term, trunc, _ = rec_env.step(act)
                 rec_steps += 1
-                if rec_steps >= 100:
+                if env_name == "merge-v0" and rec_steps >= 100:
+                    trunc = True
+                elif rec_steps >= 300 and env_name == "racetrack-v0":
                     trunc = True
                 if term or trunc:
                     break
@@ -232,8 +254,14 @@ if __name__ == "__main__":
     # 新增：环境选择逻辑
     print("[H] Highway 环境 (highway-v0)")
     print("[M] Merge 环境 (merge-v0)")
-    env_choice = input("👉 请选择采集环境 (H 或 M，默认 H): ").strip().upper()
-    target_env = "merge-v0" if env_choice == 'M' else "highway-v0"
+    print("[R] Racetrack 环境 (racetrack-v0)")
+    env_choice = input("👉 请选择采集环境 (H, M 或 R，默认 H): ").strip().upper()
+    if env_choice == 'M':
+        target_env = "merge-v0"
+    elif env_choice == 'R':
+        target_env = "racetrack-v0"
+    else:
+        target_env = "highway-v0"
     print("==========================================")
 
     choice = input("👉 请输入采集模式 (1 或 2，默认 1): ").strip()
@@ -245,6 +273,13 @@ if __name__ == "__main__":
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 精准匹配 M4 训练时的观测分布
         AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M3_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
         AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]} # 🚨 必须使用 [20, 30] 才能让 M3 不产生速度幻觉
+    elif target_env == "racetrack-v0":
+        # Racetrack 环境：R1 稳健跑圈专家 (Mode 1)
+        # ⚠️ 待 R1 训练完成后，请自行将下面路径中的 XXXXXX 替换为真实的时间戳！
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R1_Base_XXXXXX", "sac_racetrack_final.pth")
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 30]}
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R2_Aggressive_XXXXXX", "sac_racetrack_final.pth")
+        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 35]}
     else:
         # Highway 环境：使用过去的经典权重
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")

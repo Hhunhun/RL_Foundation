@@ -1,17 +1,35 @@
-# IDE 配置
-.idea/
-.vscode/
+# ==========================================
+# RL Foundation 专属忽略配置
+# ==========================================
 
-# Python & 环境编译产物
+# 1. 忽略庞大的专家数据集（.npz）及演示录像，但保留文件夹结构
+data/expert_data/*/dataset_*
+
+# 2. 忽略所有训练与评估输出（模型权重、日志、录像、评估图表与数据）
+outputs/*/logs/*
+outputs/*/models/*
+outputs/*/videos/*
+outputs/*/eval_results/*
+
+old_scripts/aban_outputs/*/logs/*
+old_scripts/aban_outputs/*/models/*
+old_scripts/aban_outputs/*/videos/*
+old_scripts/aban_outputs/*/eval_results/*
+
+# ==========================================
+# Python & IDE 通用忽略配置
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
+
+# 虚拟环境
 venv/
+.env/
+.venv/
 env/
-.env
 
-# 强化学习训练产出物 (避免将几百MB的模型推送到 Git)
-outputs/
-old_scripts/aban_outputs/
-
-data/
+# IDE 配置
+.vscode/
+.idea/
+*.swp

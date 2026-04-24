@@ -1,5 +1,6 @@
 from .highway_wrapper import create_highway_env
 from .merge_wrapper import create_merge_env
+from .racetrack_wrapper import create_racetrack_env
 
 def create_environment(env_name: str, is_eval: bool = False, algo: str = "sac", wrapper_config=None, env_config=None):
     """
@@ -18,13 +19,17 @@ def create_environment(env_name: str, is_eval: bool = False, algo: str = "sac", 
     Raises:
         ValueError: 如果提供了不支持的环境名称。
     """
+    # 按照环境引入顺位路由: highway -> merge -> racetrack
     if env_name == "highway-v0":
         print(f"🏭 环境工厂：正在创建 Highway 环境 (is_eval={is_eval}, algo={algo})...")
         return create_highway_env(env_name, is_eval=is_eval, algo=algo)
     elif env_name == "merge-v0":
         print(f"🏭 环境工厂：正在创建 Merge 环境 (is_eval={is_eval}, algo={algo})...")
         return create_merge_env(env_name, is_eval=is_eval, algo=algo, wrapper_config=wrapper_config, env_config=env_config)
+    elif env_name == "racetrack-v0":
+        print(f"🏭 环境工厂：正在创建 Racetrack 环境 (is_eval={is_eval}, algo={algo})...")
+        return create_racetrack_env(env_name, is_eval=is_eval, algo=algo, wrapper_config=wrapper_config, env_config=env_config)
     else:
-        raise ValueError(f"不支持的环境名称: {env_name}. 请使用 'highway-v0' 或 'merge-v0'.")
+        raise ValueError(f"不支持的环境名称: {env_name}. 请使用 'highway-v0', 'merge-v0' 或 'racetrack-v0'.")
 
 # 可以在这里添加其他环境的创建函数，并注册到工厂中

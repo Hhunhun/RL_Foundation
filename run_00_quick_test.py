@@ -37,7 +37,7 @@ def test_env_pipeline(env_name):
         # ==========================================
         print("\n>>> [2/6] 测试统一评估模块 (SAC 模式)...")
         eval_dir = os.path.join(PROJECT_ROOT, "outputs", env_name, "eval_results", "dummy_test")
-        sac_model_id = "M0_Test" if env_name == "merge-v0" else "H0_Test"
+        sac_model_id = {"highway-v0": "H0_Test", "merge-v0": "M0_Test", "racetrack-v0": "R0_Test"}[env_name]
         evaluate_single_model(
             model_id=sac_model_id,
             model_path=sac_model_path,
@@ -99,7 +99,7 @@ def test_env_pipeline(env_name):
         # 6. 测试 Diff-SAC 评估模块 (含归一化器)
         # ==========================================
         print("\n>>> [6/6] 测试统一评估模块 (Diff-SAC 模式)...")
-        diff_model_id = "DM0_Test" if env_name == "merge-v0" else "DH0_Test"
+        diff_model_id = {"highway-v0": "DH0_Test", "merge-v0": "DM0_Test", "racetrack-v0": "DR0_Test"}[env_name]
         evaluate_single_model(
             model_id=diff_model_id,
             model_path=bc_model_path,
@@ -121,7 +121,7 @@ def test_env_pipeline(env_name):
 
 
 if __name__ == "__main__":
-    envs_to_test = ["highway-v0", "merge-v0"]
+    envs_to_test = ["highway-v0", "merge-v0", "racetrack-v0"]
     results = {}
 
     print("🚀 启动自动化全链路测试系统...")
@@ -143,6 +143,6 @@ if __name__ == "__main__":
             all_passed = False
 
     if all_passed:
-        print("\n🎉 恭喜！Highway 与 Merge 双环境下的 SAC 与 Diff-SAC 训练及评估流水线均完美畅通！架构重构非常成功。")
+        print("\n🎉 恭喜！Highway, Merge, Racetrack 三大环境下的 SAC 与 Diff-SAC 训练及评估流水线均完美畅通！架构重构非常成功。")
     else:
         print("\n⚠️ 发现错误！请查阅上方错误追踪进行修复。")

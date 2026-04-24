@@ -68,12 +68,16 @@ def get_user_configuration():
     print("请选择目标训练环境:")
     print("  [H] Highway 环境 (highway-v0)")
     print("  [M] Merge 环境 (merge-v0)")
+    print("  [R] Racetrack 环境 (racetrack-v0)")
     
     target_env = None
     while True:
-        env_choice = input("👉 请输入选择 (H 或 M，默认 H): ").strip().upper()
+        env_choice = input("👉 请输入选择 (H, M 或 R，默认 H): ").strip().upper()
         if env_choice == 'M':
             target_env = "merge-v0"
+            break
+        elif env_choice == 'R':
+            target_env = "racetrack-v0"
             break
         elif env_choice == 'H' or env_choice == '':
             target_env = "highway-v0"
@@ -142,6 +146,17 @@ if __name__ == "__main__":
         # EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_base_20260422_014135", "expert_transitions.npz") # 之前的 M8 底座
         EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_M4_mode1_20260423_154904", "expert_transitions.npz") # 最新的 M4 底座
         TARGET_DATA_STEPS = 20000 # 按照最新要求，采集 1-2 万步即可
+    elif TARGET_ENV == "racetrack-v0":
+        # ==========================================
+        # 🚨 [Racetrack 配置区] 
+        # 请在采集完 racetrack 数据后更新以下两个路径
+        # ==========================================
+        ACTIVE_EXPERT = "R1_Base"
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R1_Base_XXXXXX", "sac_racetrack_final.pth")
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 30]}
+        
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R1_mode1_XXXXXX", "expert_transitions.npz")
+        TARGET_DATA_STEPS = 50000
     else:
         # Highway 环境默认路径
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
@@ -333,8 +348,20 @@ if __name__ == "__main__":
             {"name": "DM12_M4_Extreme_Q", "bc_epochs": 50, "q_weight": 5.0, "lr": 3e-4, "episodes": 400},   # 极限突破：施加暴力大权重，探寻 M4 底座的“安全与效率”相变崩溃点
         ]
 
+        # ==========================================
+        # Diff-SAC 针对 Racetrack 环境的初始探索矩阵
+        # ==========================================
+        racetrack_experiment_configs = [
+            {"name": "DR1_Zero_Q", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            {"name": "DR2_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "episodes": 400},
+            {"name": "DR3_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
+            {"name": "DR4_Strong_Q", "bc_epochs": 50, "q_weight": 0.5, "lr": 3e-4, "episodes": 400},
+        ]
+
         # 动态判定：根据终端输入，无缝切换任务队列
-        active_configs = merge_experiment_configs if TARGET_ENV == "merge-v0" else experiment_configs
+        if TARGET_ENV == "merge-v0": active_configs = merge_experiment_configs
+        elif TARGET_ENV == "racetrack-v0": active_configs = racetrack_experiment_configs
+        else: active_configs = experiment_configs
 
         exp_index = 0
         total_exps = len(active_configs)

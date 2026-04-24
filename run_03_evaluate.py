@@ -131,6 +131,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                 # 防止高 Q 权重下的模型 (如 DM6) 发癫加速到 40m/s 冲入虚空导致无限死循环
                 if env_name == "merge-v0" and ep_steps >= 100:
                     truncated = True
+                elif env_name == "racetrack-v0" and ep_steps >= 300:
+                    truncated = True
 
                 print(f"\r├─ 录制 Ep {ep + 1}/2 | Step {ep_steps:3d} | 车速 vx: {ego_speed:5.2f} m/s", end="")
                 if terminated or truncated:
@@ -143,6 +145,12 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                             is_not_on_road = not getattr(env_video.unwrapped.vehicle, "on_road", True)
                             is_reverse = getattr(env_video.unwrapped.vehicle, "speed", 0) < -1.0
                             is_crashed = actual_crash or is_sideways or is_not_on_road or is_reverse
+                        except Exception: pass
+                    elif env_name == "racetrack-v0":
+                        try:
+                            actual_crash = getattr(env_video.unwrapped.vehicle, "crashed", False)
+                            is_not_on_road = not getattr(env_video.unwrapped.vehicle, "on_road", True)
+                            is_crashed = actual_crash or is_not_on_road or info.get("crashed", False)
                         except Exception: pass
                     print(f"\n└─ 录像完成: {'💥 撞车/越野' if is_crashed else '🏁 完赛'}")
                     break
@@ -180,6 +188,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
             # 仅对 merge-v0 生效，防止影响 highway-v0 等其他环境的评估。
             if env_name == "merge-v0" and ep_steps >= 100:
                 truncated = True
+            elif env_name == "racetrack-v0" and ep_steps >= 300:
+                truncated = True
 
             # [新增] 实时终端可视化，对齐训练体验
             ego_speed = info.get("ego_speed_vx", 0.0)
@@ -199,6 +209,12 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                         is_not_on_road = not getattr(env_eval.unwrapped.vehicle, "on_road", True)
                         is_reverse = getattr(env_eval.unwrapped.vehicle, "speed", 0) < -1.0
                         is_crashed = actual_crash or is_sideways or is_not_on_road or is_reverse
+                    except Exception: pass
+                elif env_name == "racetrack-v0":
+                    try:
+                        actual_crash = getattr(env_eval.unwrapped.vehicle, "crashed", False)
+                        is_not_on_road = not getattr(env_eval.unwrapped.vehicle, "on_road", True)
+                        is_crashed = actual_crash or is_not_on_road or info.get("crashed", False)
                     except Exception: pass
 
                 if is_crashed:
@@ -359,8 +375,14 @@ if __name__ == "__main__":
     print("==========================================")
     print("[H] Highway 环境 (highway-v0)")
     print("[M] Merge 环境 (merge-v0)")
-    env_choice = input("👉 请选择评估环境 (H 或 M，默认 H): ").strip().upper()
-    TARGET_ENV = "merge-v0" if env_choice == 'M' else "highway-v0"
+    print("[R] Racetrack 环境 (racetrack-v0)")
+    env_choice = input("👉 请选择评估环境 (H, M 或 R，默认 H): ").strip().upper()
+    if env_choice == 'M':
+        TARGET_ENV = "merge-v0"
+    elif env_choice == 'R':
+        TARGET_ENV = "racetrack-v0"
+    else:
+        TARGET_ENV = "highway-v0"
     print(f"✅ 已锁定评估环境: {TARGET_ENV}")
     print("==========================================")
 
@@ -400,6 +422,12 @@ if __name__ == "__main__":
             "DM10": {"path": "outputs/merge-v0/models/DiffSAC_DM10_M4_Standard_Q_20260423_190251/online_finetune/diff_sac_ep400.pth", "display_name": "DM10 M4弱度干预"},
             "DM11": {"path": "outputs/merge-v0/models/DiffSAC_DM11_M4_Strong_Q_20260423_191253/online_finetune/diff_sac_ep400.pth", "display_name": "DM11 M4强力干预"},
             "DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
+        }
+    elif TARGET_ENV == "racetrack-v0":
+        EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R1_mode1_XXXXXX/expert_transitions.npz"
+        models_to_evaluate = {
+            "R1": {"path": "outputs/racetrack-v0/models/SAC_R1_Base_XXXXXX/sac_racetrack_final.pth", "display_name": "R1 稳健跑圈"},
+            # 待 Diff-SAC 跑完后继续在此添加 DR1, DR2 等进行画图对比
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
