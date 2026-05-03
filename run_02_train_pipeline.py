@@ -151,11 +151,11 @@ if __name__ == "__main__":
         # 🚨 [Racetrack 配置区] 
         # 请在采集完 racetrack 数据后更新以下两个路径
         # ==========================================
-        ACTIVE_EXPERT = "R1_Base"
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R1_Base_XXXXXX", "sac_racetrack_final.pth")
+        ACTIVE_EXPERT = "R08_Expert_Pro"
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", f"SAC_{ACTIVE_EXPERT}_XXXXXX", "sac_racetrack_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 30]}
         
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R1_mode1_XXXXXX", "expert_transitions.npz")
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R08_mode1_XXXXXX", "expert_transitions.npz")
         TARGET_DATA_STEPS = 50000
     else:
         # Highway 环境默认路径
@@ -352,10 +352,10 @@ if __name__ == "__main__":
         # Diff-SAC 针对 Racetrack 环境的初始探索矩阵
         # ==========================================
         racetrack_experiment_configs = [
-            {"name": "DR1_Zero_Q", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
-            {"name": "DR2_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "episodes": 400},
-            {"name": "DR3_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "episodes": 400},
-            {"name": "DR4_Strong_Q", "bc_epochs": 50, "q_weight": 0.5, "lr": 3e-4, "episodes": 400},
+            {"name": "DR1_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},      # 基准对照：纯克隆
+            {"name": "DR2_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},     # 微小引导：测试 Racetrack 流形下的 Q 敏感度
+            {"name": "DR3_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 标准引导：寻求速度与生存的平衡点
+            {"name": "DR4_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},     # 强力干预：打破 BC 封锁，试图拉高赛道均速
         ]
 
         # 动态判定：根据终端输入，无缝切换任务队列

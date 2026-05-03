@@ -88,7 +88,7 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
             # 🚨 [核心修复] 强制截断：避免车辆一直开到地图尽头掉进虚空，被误判为“出界/撞车”
             if env_name == "merge-v0" and ep_steps >= 100:
                 truncated = True
-            elif env_name == "racetrack-v0" and ep_steps >= 300:
+            elif env_name == "racetrack-v0" and ep_steps >= 500:
                 truncated = True
 
             # 将这一步的数据暂存进当前局的缓存列表中
@@ -228,7 +228,7 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
                 rec_steps += 1
                 if env_name == "merge-v0" and rec_steps >= 100:
                     trunc = True
-                elif rec_steps >= 300 and env_name == "racetrack-v0":
+                elif rec_steps >= 500 and env_name == "racetrack-v0":
                     trunc = True
                 if term or trunc:
                     break
@@ -245,10 +245,10 @@ if __name__ == "__main__":
     # ==========================================
     # 终端交互控制台
     # ==========================================
-    print("🤖 欢迎使用专家数据采集终端")
+    print("🤖 专家数据采集")
     print("==========================================")
-    print("[1] 基础底座模式 (Mode 1): 使用保守安全模型，含行为抖动，仅过滤碰撞局。(适用构建安全保底)")
-    print("[2] 极速神仙局模式 (Mode 2): 使用激进破局模型，关闭抖动，严格过滤速度阈值。(适用探寻上限)")
+    print("[1] 基础模式 (Mode 1): 使用保守安全模型，含行为抖动，仅过滤碰撞局。(适用构建安全保底)")
+    print("[2] 极速模式 (Mode 2): 使用激进破局模型，关闭抖动，严格过滤速度阈值。(适用探寻上限)")
     print("==========================================")
 
     # 新增：环境选择逻辑
@@ -274,12 +274,11 @@ if __name__ == "__main__":
         AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M3_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
         AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]} # 🚨 必须使用 [20, 30] 才能让 M3 不产生速度幻觉
     elif target_env == "racetrack-v0":
-        # Racetrack 环境：R1 稳健跑圈专家 (Mode 1)
-        # ⚠️ 待 R1 训练完成后，请自行将下面路径中的 XXXXXX 替换为真实的时间戳！
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R1_Base_XXXXXX", "sac_racetrack_final.pth")
+        # Racetrack 环境：R08 终极六边形 (Mode 1) 与 R02 速度优先 (Mode 2)
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R08_SAC_Expert_Pro_XXXXXX", "sac_racetrack_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 30]}
-        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R2_Aggressive_XXXXXX", "sac_racetrack_final.pth")
-        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 35]}
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R02_SAC_Speed_Priority_XXXXXX", "sac_racetrack_final.pth")
+        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 35]} # 激发高均速流形
     else:
         # Highway 环境：使用过去的经典权重
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")

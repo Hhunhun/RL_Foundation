@@ -131,7 +131,7 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
                 # 防止高 Q 权重下的模型 (如 DM6) 发癫加速到 40m/s 冲入虚空导致无限死循环
                 if env_name == "merge-v0" and ep_steps >= 100:
                     truncated = True
-                elif env_name == "racetrack-v0" and ep_steps >= 300:
+                elif env_name == "racetrack-v0" and ep_steps >= 500:
                     truncated = True
 
                 print(f"\r├─ 录制 Ep {ep + 1}/2 | Step {ep_steps:3d} | 车速 vx: {ego_speed:5.2f} m/s", end="")
@@ -188,7 +188,7 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
             # 仅对 merge-v0 生效，防止影响 highway-v0 等其他环境的评估。
             if env_name == "merge-v0" and ep_steps >= 100:
                 truncated = True
-            elif env_name == "racetrack-v0" and ep_steps >= 300:
+            elif env_name == "racetrack-v0" and ep_steps >= 500:
                 truncated = True
 
             # [新增] 实时终端可视化，对齐训练体验
@@ -424,54 +424,67 @@ if __name__ == "__main__":
             "DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
         }
     elif TARGET_ENV == "racetrack-v0":
-        EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R1_mode1_XXXXXX/expert_transitions.npz"
+        EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R08_mode1_XXXXXX/expert_transitions.npz"
         models_to_evaluate = {
-            "R1": {"path": "outputs/racetrack-v0/models/SAC_R1_Base_XXXXXX/sac_racetrack_final.pth", "display_name": "R1 稳健跑圈"},
-            # 待 Diff-SAC 跑完后继续在此添加 DR1, DR2 等进行画图对比
+            # === 第一期 SAC 消融矩阵 ===
+            # "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_XXXXXX/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
+            # "R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_XXXXXX/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
+            # "R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_XXXXXX/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
+            # "R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_XXXXXX/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
+            # "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_XXXXXX/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
+            # "R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_XXXXXX/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
+            # "R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_XXXXXX/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
+            "R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_XXXXXX/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
+            
+            # === 第一期 Diff-SAC 对比 ===
+            # "DR1": {"path": "outputs/racetrack-v0/models/DiffSAC_DR1_Pure_BC_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR1 纯 BC 克隆"},
+            # "DR2": {"path": "outputs/racetrack-v0/models/DiffSAC_DR2_Micro_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR2 微引导"},
+            # "DR3": {"path": "outputs/racetrack-v0/models/DiffSAC_DR3_Standard_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR3 标准引导"},
+            # "DR4": {"path": "outputs/racetrack-v0/models/DiffSAC_DR4_Strong_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR4 强力干预"},
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
         models_to_evaluate = {
-        #"H1": {"path": "outputs/models/SAC_H1_20260329_150543/sac_highway_final.pth", "display_name": "H1 无约束 SAC"},
-        #"H2": {"path": "outputs/models/SAC_H2_20260329_185751/sac_highway_final.pth", "display_name": "H2 越野飙车 SAC"},
-        #"H3": {"path": "outputs/models/SAC_H3_20260330_010914/sac_highway_final.pth", "display_name": "H3 LQR 欠拟合 SAC"},
-        #"H5": {"path": "outputs/models/SAC_H5_20260330_135449/sac_highway_final.pth", "display_name": "H5 安全保守 SAC"},
-        #"H6": {"path": "outputs/models/SAC_H6_20260330_213300/sac_highway_final.pth", "display_name": "H6 高效超车 SAC"},
+            #"H1": {"path": "outputs/models/SAC_H1_20260329_150543/sac_highway_final.pth", "display_name": "H1 无约束 SAC"},
+            #"H2": {"path": "outputs/models/SAC_H2_20260329_185751/sac_highway_final.pth", "display_name": "H2 越野飙车 SAC"},
+            #"H3": {"path": "outputs/models/SAC_H3_20260330_010914/sac_highway_final.pth", "display_name": "H3 LQR 欠拟合 SAC"},
+            #"H5": {"path": "outputs/models/SAC_H5_20260330_135449/sac_highway_final.pth", "display_name": "H5 安全保守 SAC"},
+            #"H6": {"path": "outputs/models/SAC_H6_20260330_213300/sac_highway_final.pth", "display_name": "H6 高效超车 SAC"},
 
-        #"DH1": {"path": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "DH1 微弱 Q 引导"},
-        #"DH2": {"path": "outputs/models/DiffSAC_DH2_20260405_065603/diff_sac_ep400.pth", "display_name": "DH2 标准 Q 引导"},
-        #"DH3": {"path": "outputs/models/DiffSAC_DH3_20260405_101704/diff_sac_ep400.pth", "display_name": "DH3 强力 Q 引导"},
-        #"DH4": {"path": "outputs/models/DiffSAC_DH4_20260405_141352/diff_sac_ep500.pth", "display_name": "DH4 降学习率长跑"},
+            #"DH1": {"path": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "DH1 微弱 Q 引导"},
+            #"DH2": {"path": "outputs/models/DiffSAC_DH2_20260405_065603/diff_sac_ep400.pth", "display_name": "DH2 标准 Q 引导"},
+            #"DH3": {"path": "outputs/models/DiffSAC_DH3_20260405_101704/diff_sac_ep400.pth", "display_name": "DH3 强力 Q 引导"},
+            #"DH4": {"path": "outputs/models/DiffSAC_DH4_20260405_141352/diff_sac_ep500.pth", "display_name": "DH4 降学习率长跑"},
 
-        #"DH5": {"path": "outputs/models/DiffSAC_DH5_20260406_023023/diff_sac_ep400.pth", "display_name": "DH5 极微引导"},
-        #"DH6": {"path": "outputs/models/DiffSAC_DH6_20260406_040052/diff_sac_ep400.pth", "display_name": "DH6 铁壁底座"},
-        #"DH7": {"path": "outputs/models/DiffSAC_DH7_20260406_052938/diff_sac_ep500.pth", "display_name": "DH7 冰封微调"},
-        #"DH8": {"path": "outputs/models/DiffSAC_DH8_20260406_064236/diff_sac_ep400.pth", "display_name": "DH8 零引导对照"},
+            #"DH5": {"path": "outputs/models/DiffSAC_DH5_20260406_023023/diff_sac_ep400.pth", "display_name": "DH5 极微引导"},
+            #"DH6": {"path": "outputs/models/DiffSAC_DH6_20260406_040052/diff_sac_ep400.pth", "display_name": "DH6 铁壁底座"},
+            #"DH7": {"path": "outputs/models/DiffSAC_DH7_20260406_052938/diff_sac_ep500.pth", "display_name": "DH7 冰封微调"},
+            #"DH8": {"path": "outputs/models/DiffSAC_DH8_20260406_064236/diff_sac_ep400.pth", "display_name": "DH8 零引导对照"},
 
-        #"DH9": {"path": "outputs/models/DiffSAC_DH9_20260406_153903/diff_sac_ep500.pth", "display_name": "DH9 终极防御底座"},
-        #"DH10": {"path": "outputs/models/DiffSAC_DH10_20260406_172128/diff_sac_ep500.pth", "display_name": "DH10 加速冰封"},
-        #"DH11": {"path": "outputs/models/DiffSAC_DH11_20260406_211102/diff_sac_ep400.pth", "display_name": "DH11 极限微丝引导"},
-        #"DH12": {"path": "outputs/models/DiffSAC_DH12_20260407_013017/diff_sac_ep800.pth", "display_name": "DH12 冰封马拉松"},
+            #"DH9": {"path": "outputs/models/DiffSAC_DH9_20260406_153903/diff_sac_ep500.pth", "display_name": "DH9 终极防御底座"},
+            #"DH10": {"path": "outputs/models/DiffSAC_DH10_20260406_172128/diff_sac_ep500.pth", "display_name": "DH10 加速冰封"},
+            #"DH11": {"path": "outputs/models/DiffSAC_DH11_20260406_211102/diff_sac_ep400.pth", "display_name": "DH11 极限微丝引导"},
+            #"DH12": {"path": "outputs/models/DiffSAC_DH12_20260407_013017/diff_sac_ep800.pth", "display_name": "DH12 冰封马拉松"},
 
-        #"DH13": {"path": "outputs/models/DiffSAC_DH13_20260407_071544/diff_sac_ep400.pth", "display_name": "DH13 终极无坚不摧"},
-        #"DH14": {"path": "outputs/models/DiffSAC_DH14_20260407_110205/diff_sac_ep400.pth", "display_name": "DH14 厚甲利刃"},
-        #"DH15": {"path": "outputs/models/DiffSAC_DH15_20260407_140041/diff_sac_ep400.pth", "display_name": "DH15 深度 BC 对照"},
-        #"DH16": {"path": "outputs/models/DiffSAC_DH16_20260407_170756/diff_sac_ep600.pth", "display_name": "DH16 微丝引导马拉松"},
+            #"DH13": {"path": "outputs/models/DiffSAC_DH13_20260407_071544/diff_sac_ep400.pth", "display_name": "DH13 终极无坚不摧"},
+            #"DH14": {"path": "outputs/models/DiffSAC_DH14_20260407_110205/diff_sac_ep400.pth", "display_name": "DH14 厚甲利刃"},
+            #"DH15": {"path": "outputs/models/DiffSAC_DH15_20260407_140041/diff_sac_ep400.pth", "display_name": "DH15 深度 BC 对照"},
+            #"DH16": {"path": "outputs/models/DiffSAC_DH16_20260407_170756/diff_sac_ep600.pth", "display_name": "DH16 微丝引导马拉松"},
 
-        #"DH17": {"path": "outputs/models/DiffSAC_DH17_20260408_141756/diff_sac_ep400.pth", "display_name": "DH17 混合 BC 对照"},
-        #"DH18": {"path": "outputs/models/DiffSAC_DH18_20260408_155039/diff_sac_ep400.pth", "display_name": "DH18 混合微丝引导"},
-        #"DH19": {"path": "outputs/models/DiffSAC_DH19_20260408_190001/diff_sac_ep400.pth", "display_name": "DH19 混合厚底座"},
-        #"DH20": {"path": "outputs/models/DiffSAC_DH20_20260408_224554/diff_sac_ep600.pth", "display_name": "DH20 混合马拉松"},
+            #"DH17": {"path": "outputs/models/DiffSAC_DH17_20260408_141756/diff_sac_ep400.pth", "display_name": "DH17 混合 BC 对照"},
+            #"DH18": {"path": "outputs/models/DiffSAC_DH18_20260408_155039/diff_sac_ep400.pth", "display_name": "DH18 混合微丝引导"},
+            #"DH19": {"path": "outputs/models/DiffSAC_DH19_20260408_190001/diff_sac_ep400.pth", "display_name": "DH19 混合厚底座"},
+            #"DH20": {"path": "outputs/models/DiffSAC_DH20_20260408_224554/diff_sac_ep600.pth", "display_name": "DH20 混合马拉松"},
 
-        #"DH21": {"path": "outputs/models/DiffSAC_DH21_20260410_031928/diff_sac_ep600.pth", "display_name": "DH21 黄金比例马拉松"},
-        #"DH22": {"path": "outputs/models/DiffSAC_DH22_20260413_031458/diff_sac_ep400.pth", "display_name": "DH22 智能 BC 对照"},
-        #"DH23": {"path": "outputs/models/DiffSAC_DH23_20260413_041749/diff_sac_ep400.pth", "display_name": "DH23 智能微丝引导"},
-        #"DH24": {"path": "outputs/models/DiffSAC_DH24_20260413_052105/diff_sac_ep400.pth", "display_name": "DH24 智能厚底座"},
+            #"DH21": {"path": "outputs/models/DiffSAC_DH21_20260410_031928/diff_sac_ep600.pth", "display_name": "DH21 黄金比例马拉松"},
+            #"DH22": {"path": "outputs/models/DiffSAC_DH22_20260413_031458/diff_sac_ep400.pth", "display_name": "DH22 智能 BC 对照"},
+            #"DH23": {"path": "outputs/models/DiffSAC_DH23_20260413_041749/diff_sac_ep400.pth", "display_name": "DH23 智能微丝引导"},
+            #"DH24": {"path": "outputs/models/DiffSAC_DH24_20260413_052105/diff_sac_ep400.pth", "display_name": "DH24 智能厚底座"},
 
-        #"DH25": {"path": "outputs/models/DiffSAC_DH25_20260413_062853/diff_sac_ep600.pth", "display_name": "DH25 智能混合马拉松"},
+            #"DH25": {"path": "outputs/models/DiffSAC_DH25_20260413_062853/diff_sac_ep600.pth", "display_name": "DH25 智能混合马拉松"},
 
-        #"DH8_Run2": {"path": "outputs/models/DiffSAC_DH8_Run2_20260406_080556/diff_sac_ep500.pth", "display_name": "DH8_Run2 零引导对照"},
-        #"DH8_Run3": {"path": "outputs/models/DiffSAC_DH8_Run3_20260406_095201/diff_sac_ep500.pth", "display_name": "DH8_Run3 零引导对照"},
+            #"DH8_Run2": {"path": "outputs/models/DiffSAC_DH8_Run2_20260406_080556/diff_sac_ep500.pth", "display_name": "DH8_Run2 零引导对照"},
+            #"DH8_Run3": {"path": "outputs/models/DiffSAC_DH8_Run3_20260406_095201/diff_sac_ep500.pth", "display_name": "DH8_Run3 零引导对照"},
         }
 
 

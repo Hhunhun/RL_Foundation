@@ -61,7 +61,7 @@ def run_single_experiment(config):
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
 
-    replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(2e5))
+    replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6))
     initial_lr = 3e-4
     agent = SACAgent(state_dim, action_dim, action_scale=max_action, lr=initial_lr)
     
@@ -125,11 +125,16 @@ def run_single_experiment(config):
 
             next_state, reward, terminated, truncated, _ = env.step(action)
             
-            # [强制物理截断] 赛道较长，截断步数放宽至 300 步
-            if episode_steps >= 300:
+            # [关键修改] Racetrack 赛道很长，不要轻易 truncated
+            # 只有当环境真正由于碰撞或出界返回 terminated 时，才标记为死亡
+            # 步数限制导致的截断不应计入 Q 值的死亡衰减
+            if episode_steps >= 500: # 随机起点可能需要更多步数来跑
                 truncated = True
                 
-            done_bool = float(terminated)
+            # SAC 核心修正：
+            # 如果是碰撞(terminated)，done_bool=1
+            # 如果是时间到了(truncated)，done_bool=0
+            done_bool = float(terminated) 
             replay_buffer.add(state, action, reward * reward_scale, next_state, done_bool)
 
             state = next_state
@@ -167,7 +172,7 @@ def run_single_experiment(config):
             agent.save_model(checkpoint_path)
 
             print(f"\n🎬 [评估与录制] Episode {episode}，开始录制当前策略表现...")
-            eval_env = create_racetrack_env(env_name=env_name, is_eval=True, algo="sac")
+            eval_env = create_racetrack_env(env_name=env_name, is_eval=False, algo="sac")
             eval_env = RecordVideo(eval_env, video_folder=video_save_dir, name_prefix=f"ep{episode}")
             
             for i in range(1):
@@ -177,7 +182,7 @@ def run_single_experiment(config):
                     action = agent.select_action(eval_state, evaluate=True)
                     eval_state, _, eval_terminated, eval_truncated, _ = eval_env.step(action)
                     eval_steps += 1
-                    if eval_steps >= 300:
+                    if eval_steps >= 500:
                         eval_truncated = True
                     if eval_terminated or eval_truncated:
                         break
@@ -197,49 +202,89 @@ def run_single_experiment(config):
     print(f"\n🏁 Experiment {config['name']} finished! Models saved to: {model_save_dir}")
 
 
+# ... existing code ...
 if __name__ == "__main__":
     experiment_configs = [
-        #{
-        #    "name": "R1_Base",
-        #    "max_steps": 200000,
-        #    "env_config": {
-        #        "collision_reward": -10.0,
-        #        "high_speed_reward": 2.0,
-        #        "reward_speed_range": [15, 30],
-        #    },
-        #    "wrapper_config": {"jerk_weight": 1.0, "steering_weight": 0.2}
-        #},
         {
-            "name": "R2_Cornering_Focus",
+            "name": "R01_SAC_Baseline",
             "max_steps": 200000,
             "env_config": {
-                "collision_reward": -10.0, 
+                "collision_reward": -10.0,
+                "high_speed_reward": 2.0,
+                "reward_speed_range": [15, 30],
+            },
+            "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2} # 标准平滑惩罚
+        },
+        {
+            "name": "R02_SAC_Speed_Priority",
+            "max_steps": 200000,
+            "env_config": {
+                "collision_reward": -15.0, 
+                "high_speed_reward": 3.0, # 极速诱惑
+                "reward_speed_range": [20, 35], # 强迫模型冲击更高速度
+            },
+            "wrapper_config": {"jerk_weight": 0.05, "steering_weight": 0.1} # 解除平滑紧箍咒，允许漂移过弯
+        },
+        {
+            "name": "R03_SAC_Safety_Priority",
+            "max_steps": 200000,
+            "env_config": {
+                "collision_reward": -30.0, 
                 "high_speed_reward": 1.5, 
-                "reward_speed_range": [10, 20], # 降低目标速度，20m/s (72km/h) 过弯更符合物理极限
+                "reward_speed_range": [10, 20], # 收敛车速，安全第一
             },
-            "wrapper_config": {"jerk_weight": 0.05, "steering_weight": 0.1} # 解除平滑紧箍咒，允许大脚刹车和猛打方向
+            "wrapper_config": {"jerk_weight": 1.0, "steering_weight": 0.5} # 重罚方向盘画龙，逼迫老奶奶开法
         },
         {
-            "name": "R3_Aggressive_Pacing",
+            "name": "R04_SAC_Extreme_Drift",
             "max_steps": 200000,
             "env_config": {
-                "collision_reward": -15.0, # 提高碰撞惩罚，防止速度太快直接冲出赛道
-                "high_speed_reward": 2.0, 
-                "reward_speed_range": [15, 30], # 恢复 30m/s 的极速诱惑
+                "collision_reward": -5.0, # 极低碰撞惩罚，鼓励试错
+                "high_speed_reward": 3.5,
+                "reward_speed_range": [25, 40], # 狂野极速
             },
-            "wrapper_config": {"jerk_weight": 0.01, "steering_weight": 0.05} # 极限放权，只要不撞车，动作再丑也不扣分
+            "wrapper_config": {"jerk_weight": 0.0, "steering_weight": 0.0} # 完全不管方向盘
         },
         {
-            "name": "R4_Racing_Line",
+            "name": "R05_SAC_Smooth_Racing",
             "max_steps": 200000,
             "env_config": {
-                "collision_reward": -10.0, 
-                "high_speed_reward": 2.0, 
-                "reward_speed_range": [15, 25], # 设定一个兼顾效率与物理可行性的最高速度
+                "collision_reward": -20.0,
+                "high_speed_reward": 2.0,
+                "reward_speed_range": [15, 25],
             },
-            "wrapper_config": {"jerk_weight": 0.2, "steering_weight": 0.2} # 施加适度惩罚，逼迫模型学会“平滑地控制速度矢量”
+            "wrapper_config": {"jerk_weight": 0.8, "steering_weight": 0.3} # 逼迫模型走外内外完美赛车线
+        },
+        {
+            "name": "R06_SAC_Wide_Dynamic",
+            "max_steps": 200000,
+            "env_config": {
+                "collision_reward": -25.0,
+                "high_speed_reward": 2.5,
+                "reward_speed_range": [10, 35], # 极宽的动态域，测试刹车和加速的适应性
+            },
+            "wrapper_config": {"jerk_weight": 0.2, "steering_weight": 0.2}
+        },
+        {
+            "name": "R07_SAC_Zero_Tolerance",
+            "max_steps": 200000,
+            "env_config": {
+                "collision_reward": -50.0, # 死亡阴影
+                "high_speed_reward": 1.5,
+                "reward_speed_range": [15, 25],
+            },
+            "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2}
+        },
+        {
+            "name": "R08_SAC_Expert_Pro",
+            "max_steps": 200000,
+            "env_config": {
+                "collision_reward": -40.0,
+                "high_speed_reward": 2.5,
+                "reward_speed_range": [15, 30],
+            },
+            "wrapper_config": {"jerk_weight": 0.1, "steering_weight": 0.1} # 适中平滑，提纯专用的终极六边形
         }
-
     ]
 
     for config in experiment_configs:
