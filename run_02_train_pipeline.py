@@ -151,11 +151,11 @@ if __name__ == "__main__":
         # 🚨 [Racetrack 配置区] 
         # 请在采集完 racetrack 数据后更新以下两个路径
         # ==========================================
-        ACTIVE_EXPERT = "R08_Expert_Pro"
+        ACTIVE_EXPERT = "R05_Smooth_Racing"
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", f"SAC_{ACTIVE_EXPERT}_XXXXXX", "sac_racetrack_final.pth")
-        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 30]}
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
         
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R08_mode1_XXXXXX", "expert_transitions.npz")
+        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R05_mode1_XXXXXX", "expert_transitions.npz")
         TARGET_DATA_STEPS = 50000
     else:
         # Highway 环境默认路径
@@ -350,12 +350,13 @@ if __name__ == "__main__":
 
         # ==========================================
         # Diff-SAC 针对 Racetrack 环境的初始探索矩阵
+        # 核心目的：验证纯粹的 R055 稳健底座（15.6m/s），能否通过 Q 引导打破自身的物理天花板
         # ==========================================
         racetrack_experiment_configs = [
-            {"name": "DR1_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},      # 基准对照：纯克隆
-            {"name": "DR2_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},     # 微小引导：测试 Racetrack 流形下的 Q 敏感度
-            {"name": "DR3_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 标准引导：寻求速度与生存的平衡点
-            {"name": "DR4_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},     # 强力干预：打破 BC 封锁，试图拉高赛道均速
+            {"name": "DR1_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},      # 基准对照：纯克隆 R055 的稳健轨迹，预期均速 15.6 左右
+            {"name": "DR2_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},     # 微小引导：测试 Racetrack 安全流形下的 Q 敏感度
+            {"name": "DR3_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 标准引导：试图在不掉存活率的前提下，逼迫模型踩油门
+            {"name": "DR4_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},     # 强力干预：可能导致 OOD (分布外崩溃)，寻找稳健底座的相变点
         ]
 
         # 动态判定：根据终端输入，无缝切换任务队列

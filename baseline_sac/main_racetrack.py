@@ -167,7 +167,7 @@ def run_single_experiment(config):
 
         print(f"\r🏁 Episode {episode:03d} | Reward: {episode_reward:5.1f} | Steps: {episode_steps:3d} | LR: {cur_lr:.1e} | C_Loss: {avg_c_loss:.3f}")
 
-        if episode % 500 == 0:
+        if episode % 250 == 0:
             checkpoint_path = os.path.join(model_save_dir, f"sac_racetrack_ep{episode}.pth")
             agent.save_model(checkpoint_path)
 

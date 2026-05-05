@@ -271,14 +271,16 @@ if __name__ == "__main__":
         # Merge 环境：M4 稳健安全专家 (Mode 1)，M3 激进寻隙专家 (Mode 2)
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 精准匹配 M4 训练时的观测分布
+        
         AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M3_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
         AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]} # 🚨 必须使用 [20, 30] 才能让 M3 不产生速度幻觉
     elif target_env == "racetrack-v0":
-        # Racetrack 环境：R08 终极六边形 (Mode 1) 与 R02 速度优先 (Mode 2)
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R08_SAC_Expert_Pro_XXXXXX", "sac_racetrack_final.pth")
-        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 30]}
-        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R02_SAC_Speed_Priority_XXXXXX", "sac_racetrack_final.pth")
-        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 35]} # 激发高均速流形
+        # 🛡️ 稳健流形提取：选用 R05 (平滑赛车线)。其具备 27% 存活率与 15.6m/s 慢速，轨迹极其平滑
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R05_SAC_Smooth_Racing_20260505_131614", "sac_racetrack_final.pth")
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
+        # ⚔️ 极限流形提取：选用 R01 (基础 SAC，真正的 SOTA)。榨取其 19.28m/s 均速下的极限避障微操
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R01_SAC_Baseline_XXXXXX", "sac_racetrack_final.pth")
+        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [15, 30]} 
     else:
         # Highway 环境：使用过去的经典权重
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")

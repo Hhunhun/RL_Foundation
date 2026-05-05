@@ -303,13 +303,18 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=0.8) # 使用 display_labels
     plt.title('规控策略稳定性对比 (Standard Deviation of Reward)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Reward Std. Dev (Lower is Better)', fontsize=12)
+    
+    # [自适应 Y 轴] 顶部预留 15% 的动态空间，确保文本绝对不会出界
+    max_std = max(std_rewards) if len(std_rewards) > 0 else 1.0
+    plt.ylim(0, max_std * 1.15)
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.3)
 
     # 在柱子上标注具体数字
     for bar in bars_std:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.5, f'{yval:.1f}', ha='center', va='bottom', fontsize=10)
+        # 文本高度偏移也改为图表量级的 2%，实现动态自适应
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_std * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10)
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, '02_reward_variance_bar.png'), dpi=300)
@@ -323,14 +328,14 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=0.9) # 使用 display_labels
     plt.title('规控策略存活率对比 (Survival Rate)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Survival Rate (%)', fontsize=12)
-    plt.ylim(0, 105)
+    plt.ylim(0, 110) # 扩大顶部留白，防止 100.0% 标签被切角
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.3)
 
     # 在柱子上标注具体数字
     for bar in bars_surv:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + 1, f'{yval:.1f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 1.5, f'{yval:.1f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, '03_survival_rate_bar.png'), dpi=300)
@@ -345,12 +350,15 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)', fontsize=14, fontweight='bold') # 标题不变
     plt.ylabel('Mean Speed (m/s)', fontsize=12)
 
-    # [修复] 动态设定 Y 轴下限。之前写死了 20.0，导致 merge 环境 (均速 17 左右) 的柱子完全不可见！
-    # 现在改为根据实际最小速度动态下潜，保证柱状图完整显示，同时保留差异放大效果。
-    min_speed = min(mean_speeds)
-    max_speed = max(mean_speeds)
-    y_min = max(0.0, min_speed - 3.0) # 往下探 3m/s，但绝不低于 0
-    plt.ylim(y_min, max_speed + 2.0)
+    # [重构自适应缩放] 根据数据的真实极差动态计算缩放边界，确保完美居中且不过度裁剪
+    min_speed = min(mean_speeds) if len(mean_speeds) > 0 else 0.0
+    max_speed = max(mean_speeds) if len(mean_speeds) > 0 else 1.0
+    y_range = max_speed - min_speed
+    margin = y_range * 0.15 if y_range > 0 else max_speed * 0.15
+    
+    y_min = max(0.0, min_speed - margin - 1.0)
+    y_max = max_speed + margin + 1.0
+    plt.ylim(y_min, y_max)
 
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.5)
@@ -358,7 +366,8 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 在柱子上标注具体数字
     for bar in bars_speed:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.2, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+        # 文本高度也根据动态域按比例抬升
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + (y_max - y_min) * 0.02, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, '04_mean_speed_bar.png'), dpi=300)
@@ -427,16 +436,36 @@ if __name__ == "__main__":
         EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R08_mode1_XXXXXX/expert_transitions.npz"
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            # "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_XXXXXX/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
-            # "R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_XXXXXX/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
-            # "R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_XXXXXX/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
-            # "R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_XXXXXX/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
-            # "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_XXXXXX/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
-            # "R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_XXXXXX/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
-            # "R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_XXXXXX/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
-            "R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_XXXXXX/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
+            #"R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
+            #"R011": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260504_201800/sac_racetrack_final.pth", "display_name": "R011 基础避障"},
+            #"R012": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260504_225330/sac_racetrack_final.pth", "display_name": "R012 基础双局"},
+            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260503_232841/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
+            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260504_014115/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
+            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260504_035840/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
+            #"R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260504_061123/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
+            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260504_082337/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
+            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260504_103444/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
+            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_124633/sac_racetrack_final.pth", "display_name": "R08 专家底座"},          
+            #"R081": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_222831/sac_racetrack_ep750.pth", "display_name": "R081 专家底座"},
+            #"R082": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_004728/sac_racetrack_final.pth", "display_name": "R082 专家底座"},
             
-            # === 第一期 Diff-SAC 对比 ===
+
+            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
+            "R011": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "display_name": "R011 基础 SAC"},
+            "R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260503_232841/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
+            "R022": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "display_name": "R022 速度优先"},
+            "R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260504_014115/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
+            "R033": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "display_name": "R033 安全优先"},
+            "R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260504_035840/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
+            "R044": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "display_name": "R044 极限漂移"},
+            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260504_061123/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
+            "R055": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R055 平滑赛车线"},
+            "R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260504_082337/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
+            "R066": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "display_name": "R066 宽域动态"},
+            "R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260504_103444/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
+            "R077": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "display_name": "R077 零容忍"},
+            "R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_124633/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
+            "R088": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "display_name": "R088 专家底座"},
             # "DR1": {"path": "outputs/racetrack-v0/models/DiffSAC_DR1_Pure_BC_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR1 纯 BC 克隆"},
             # "DR2": {"path": "outputs/racetrack-v0/models/DiffSAC_DR2_Micro_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR2 微引导"},
             # "DR3": {"path": "outputs/racetrack-v0/models/DiffSAC_DR3_Standard_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR3 标准引导"},
