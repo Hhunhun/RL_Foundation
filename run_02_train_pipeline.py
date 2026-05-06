@@ -151,11 +151,22 @@ if __name__ == "__main__":
         # 🚨 [Racetrack 配置区] 
         # 请在采集完 racetrack 数据后更新以下两个路径
         # ==========================================
-        ACTIVE_EXPERT = "R05_Smooth_Racing"
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", f"SAC_{ACTIVE_EXPERT}_XXXXXX", "sac_racetrack_final.pth")
+        # 🎛️ 模式切换开关：选择使用单专家还是混合专家数据集
+        USE_MIXED_EXPERT = True
+        
+        if not USE_MIXED_EXPERT:
+            ACTIVE_EXPERT = "R05_Smooth_Racing"
+            SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", f"SAC_{ACTIVE_EXPERT}_20260505_131614", "sac_racetrack_final.pth")
+            EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R05_mode1_20260506_011817", "expert_transitions.npz")
+        else:
+            ACTIVE_EXPERT = "Mixed_R05_R01"
+            # SAFE_MODEL_PATH 仅作为代码层面的兼容保底，混合模式下主要依赖下方 npz 数据集
+            SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R05_SAC_Smooth_Racing_20260505_131614", "sac_racetrack_final.pth")
+            # 🚨 请将 XXXXXX 替换为您实际生成的混合数据集的时间戳
+            EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_mixed_0.8R05_0.2R01_20260506_142446", "expert_transitions_mixed_0.8R05_0.2R01.npz")
+            
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
         
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R05_mode1_XXXXXX", "expert_transitions.npz")
         TARGET_DATA_STEPS = 50000
     else:
         # Highway 环境默认路径
@@ -353,12 +364,18 @@ if __name__ == "__main__":
         # 核心目的：验证纯粹的 R055 稳健底座（15.6m/s），能否通过 Q 引导打破自身的物理天花板
         # ==========================================
         racetrack_experiment_configs = [
-            {"name": "DR1_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},      # 基准对照：纯克隆 R055 的稳健轨迹，预期均速 15.6 左右
-            {"name": "DR2_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},     # 微小引导：测试 Racetrack 安全流形下的 Q 敏感度
-            {"name": "DR3_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 标准引导：试图在不掉存活率的前提下，逼迫模型踩油门
-            {"name": "DR4_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},     # 强力干预：可能导致 OOD (分布外崩溃)，寻找稳健底座的相变点
+            # === 第一期：单专家消融 (已完成) ===
+            # {"name": "DR01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},
+            # {"name": "DR02_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},
+            # {"name": "DR03_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},
+            # {"name": "DR04_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "episodes": 400},
+            
+            # === 第二期：混合专家突围 (Mixed Experts) ===
+            {"name": "DR05_Mixed_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "episodes": 400},        # 混合纯 BC：测试 Diffusion 能否兼容并包双模态风格
+            {"name": "DR06_Mixed_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "episodes": 400},  # 混合微调：验证微弱 Q 引导能否激发潜藏的超车基因
+            {"name": "DR07_Mixed_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400}, # 标准引导：探寻混合流形下的极限速度天花板
+            {"name": "DR08_Mixed_Strong_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "episodes": 400},   # 强力干预：寻找混合模型的相变点，验证抗塌陷能力
         ]
-
         # 动态判定：根据终端输入，无缝切换任务队列
         if TARGET_ENV == "merge-v0": active_configs = merge_experiment_configs
         elif TARGET_ENV == "racetrack-v0": active_configs = racetrack_experiment_configs

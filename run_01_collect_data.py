@@ -241,17 +241,123 @@ def collect_expert_data(model_path, env_name="highway-v0", target_transitions=50
     return data_path
 
 
+def extract_model_name(path):
+    """从单模型数据集的路径中自动提取模型代号，例如 R05"""
+    dirname = os.path.basename(os.path.dirname(path))
+    match = re.search(r'dataset_([a-zA-Z0-9]+)_', dirname)
+    return match.group(1) if match else "Expert"
+
+
+def mix_datasets(path_safe, path_aggressive, save_dir, target_total_steps=50000, safe_ratio=0.8):
+    """标准混合：按比例直接拼接并打乱两个数据集"""
+    print("\n" + "=" * 60)
+    print(f"🧬 [阶段一] 开始标准数据集融合 (保守:{safe_ratio * 100}% | 激进:{(1 - safe_ratio) * 100}%)")
+    print("=" * 60)
+
+    data_safe = np.load(path_safe)
+    data_aggressive = np.load(path_aggressive)
+    keys = data_safe.files
+
+    safe_steps = int(target_total_steps * safe_ratio)
+    aggressive_steps = target_total_steps - safe_steps
+
+    actual_safe_steps = min(safe_steps, len(data_safe['observations']))
+    actual_aggressive_steps = min(aggressive_steps, len(data_aggressive['observations']))
+    print(f"🔪 切片方案: 抽取保守数据 {actual_safe_steps} 步，抽取激进数据 {actual_aggressive_steps} 步")
+
+    mixed_data = {}
+    for key in keys:
+        safe_slice = data_safe[key][:actual_safe_steps]
+        aggressive_slice = data_aggressive[key][:actual_aggressive_steps]
+        mixed_data[key] = np.concatenate([safe_slice, aggressive_slice], axis=0)
+
+    total_steps = len(mixed_data['observations'])
+    print("🔀 正在随机打乱混合数据分布...")
+    indices = np.random.permutation(total_steps)
+    for key in keys:
+        mixed_data[key] = mixed_data[key][indices]
+
+    os.makedirs(save_dir, exist_ok=True)
+    safe_name = extract_model_name(path_safe)
+    agg_name = extract_model_name(path_aggressive)
+    mix_label = f"{safe_ratio:.1f}{safe_name}_{1.0 - safe_ratio:.1f}{agg_name}"
+    save_path = os.path.join(save_dir, f"expert_transitions_mixed_{mix_label}.npz")
+    np.savez_compressed(save_path, **mixed_data)
+    print(f"✅ 标准混合完成！已保存至: {save_path}")
+    return save_path
+
+
+def smart_mix_datasets(path_safe, path_aggressive, save_dir, env_name="highway-v0", target_total_steps=50000, safe_ratio=0.8):
+    """智能混合：对激进数据进行条件过滤（保留直道极速），再与保守数据拼接打乱"""
+    print("\n" + "=" * 60)
+    print(f"🧬 [阶段一] 开始智能过滤式数据融合 (保守:{safe_ratio * 100}% | 激进(过滤后):{(1 - safe_ratio) * 100}%)")
+    print("=" * 60)
+
+    data_safe = np.load(path_safe)
+    data_aggressive = np.load(path_aggressive)
+    keys = data_safe.files
+
+    safe_steps = int(target_total_steps * safe_ratio)
+    agg_target_steps = target_total_steps - safe_steps
+
+    agg_actions = data_aggressive['actions']
+    
+    # 🚨 核心路由：根据不同的物理环境，采用截然不同的流形过滤（Manifold Filtering）规则
+    if env_name == "highway-v0":
+        # 规则：油门踩下且方向盘几乎不动 (去除变道，提取纯净的直道冲刺)
+        safe_fast_mask = (agg_actions[:, 0] > 0.2) & (np.abs(agg_actions[:, 1]) <= 0.05)
+        desc = "直道冲刺"
+    elif env_name == "merge-v0":
+        # 规则：保持给油，且转向幅度在合理区间 (提取果断的加速汇入与并道动作)
+        safe_fast_mask = (agg_actions[:, 0] > 0.0) & (np.abs(agg_actions[:, 1]) <= 0.3)
+        desc = "加速汇入"
+    elif env_name == "racetrack-v0":
+        # 规则：绝不重踩刹车，完全释放方向盘限制 (赛道极速过弯必须允许满打方向盘)
+        safe_fast_mask = (agg_actions[:, 0] >= -0.2)
+        desc = "极限切弯"
+        
+    valid_agg_indices = np.where(safe_fast_mask)[0]
+    print(f"🔬 从激进数据的 {len(agg_actions)} 步中，成功蒸馏出 {len(valid_agg_indices)} 步纯净的'{desc}'数据。")
+
+    actual_agg_take = min(agg_target_steps, len(valid_agg_indices))
+    selected_agg_indices = np.random.choice(valid_agg_indices, size=actual_agg_take, replace=False)
+    actual_safe_take = min(safe_steps, len(data_safe['observations']))
+    print(f"🔪 最终配方: 保守底盘 {actual_safe_take} 步，极速纯净针剂 {actual_agg_take} 步。")
+
+    mixed_data = {}
+    for key in keys:
+        mixed_data[key] = np.concatenate([data_safe[key][:actual_safe_take], data_aggressive[key][selected_agg_indices]], axis=0)
+
+    total_steps = len(mixed_data['observations'])
+    print("🔀 正在随机打乱混合数据分布...")
+    indices = np.random.permutation(total_steps)
+    for key in keys:
+        mixed_data[key] = mixed_data[key][indices]
+
+    os.makedirs(save_dir, exist_ok=True)
+    safe_name = extract_model_name(path_safe)
+    agg_name = extract_model_name(path_aggressive)
+    mix_label = f"smart_{safe_ratio:.1f}{safe_name}_{1.0 - safe_ratio:.1f}{agg_name}"
+    save_path = os.path.join(save_dir, f"expert_transitions_mixed_{mix_label}.npz")
+    np.savez_compressed(save_path, **mixed_data)
+    print(f"✅ 智能混合完成！已保存至: {save_path}")
+    return save_path
+
+
 if __name__ == "__main__":
     # ==========================================
     # 终端交互控制台
     # ==========================================
-    print("🤖 专家数据采集")
+    print("🤖 数据管线控制台 (Data Pipeline)")
     print("==========================================")
+    print("--- 仿真采集 (Live Collection) ---")
     print("[1] 基础模式 (Mode 1): 使用保守安全模型，含行为抖动，仅过滤碰撞局。(适用构建安全保底)")
     print("[2] 极速模式 (Mode 2): 使用激进破局模型，关闭抖动，严格过滤速度阈值。(适用探寻上限)")
+    print("--- 离线混合 (Offline Mixing) ---")
+    print("[3] 标准混合 (Standard Mix): 将已有稳健和激进数据集按 80:20 直接拼接打乱。")
+    print("[4] 智能混合 (Smart Mix): 从激进数据中严格过滤出直道加速流形，再进行混合。")
     print("==========================================")
 
-    # 新增：环境选择逻辑
     print("[H] Highway 环境 (highway-v0)")
     print("[M] Merge 环境 (merge-v0)")
     print("[R] Racetrack 环境 (racetrack-v0)")
@@ -264,43 +370,66 @@ if __name__ == "__main__":
         target_env = "highway-v0"
     print("==========================================")
 
-    choice = input("👉 请输入采集模式 (1 或 2，默认 1): ").strip()
+    choice = input("👉 请选择执行操作 (1/2/3/4，默认 1): ").strip()
+    if choice not in ['1', '2', '3', '4']: choice = '1'
 
-    # 🚨 根据终端选择的环境，动态隔离并加载对应的 SAC 专家模型路径
+    # 🚨 环境资源配置清单 🚨
     if target_env == "merge-v0":
-        # Merge 环境：M4 稳健安全专家 (Mode 1)，M3 激进寻隙专家 (Mode 2)
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
-        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]} # 精准匹配 M4 训练时的观测分布
-        
+        SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
         AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M3_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
-        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]} # 🚨 必须使用 [20, 30] 才能让 M3 不产生速度幻觉
+        AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]}
+        # 离线混合依赖的已有数据集路径
+        SAFE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "YOUR_SAFE_DATASET_HERE", "expert_transitions.npz")
+        AGGRESSIVE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "YOUR_AGG_DATASET_HERE", "expert_transitions.npz")
+
     elif target_env == "racetrack-v0":
-        # 🛡️ 稳健流形提取：选用 R05 (平滑赛车线)。其具备 27% 存活率与 15.6m/s 慢速，轨迹极其平滑
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R05_SAC_Smooth_Racing_20260505_131614", "sac_racetrack_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
-        # ⚔️ 极限流形提取：选用 R01 (基础 SAC，真正的 SOTA)。榨取其 19.28m/s 均速下的极限避障微操
-        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R01_SAC_Baseline_XXXXXX", "sac_racetrack_final.pth")
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R01_SAC_Baseline_20260505_033212", "sac_racetrack_final.pth")
         AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [15, 30]} 
+        # 离线混合依赖的已有数据集路径 (需替换为您真实采出的文件夹名)
+        SAFE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R05_mode1_20260506_011817", "expert_transitions.npz")
+        AGGRESSIVE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R01_mode2_20260506_141859", "expert_transitions.npz")
+
     else:
-        # Highway 环境：使用过去的经典权重
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
         SAFE_ENV_CONFIG = None
         AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_213300", "sac_highway_final.pth")
         AGGRESSIVE_ENV_CONFIG = None
+        SAFE_DATA_PATH = ""
+        AGGRESSIVE_DATA_PATH = ""
 
-    if choice == '2':
-        selected_mode = 2
-        selected_model = AGGRESSIVE_MODEL_PATH
-        selected_env_config = AGGRESSIVE_ENV_CONFIG
-    else:
-        selected_mode = 1
-        selected_model = SAFE_MODEL_PATH
-        selected_env_config = SAFE_ENV_CONFIG
-
-    # 通宵挂机推荐目标量：Highway 50000步，Merge 20000步
+    timestamp_now = datetime.now().strftime("%Y%m%d_%H%M%S")
     TARGET_STEPS = 20000 if target_env == "merge-v0" else 50000
 
-    if os.path.exists(selected_model):
-        collect_expert_data(model_path=selected_model, env_name=target_env, target_transitions=TARGET_STEPS, mode=selected_mode, env_config=selected_env_config)
-    else:
-        print(f"\n❌ 找不到指定的权重文件！请确保路径正确: {selected_model}")
+    # --- 路由执行逻辑 ---
+    if choice in ['1', '2']:
+        selected_mode = int(choice)
+        selected_model = AGGRESSIVE_MODEL_PATH if choice == '2' else SAFE_MODEL_PATH
+        selected_env_config = AGGRESSIVE_ENV_CONFIG if choice == '2' else SAFE_ENV_CONFIG
+
+        if os.path.exists(selected_model):
+            collect_expert_data(model_path=selected_model, env_name=target_env, target_transitions=TARGET_STEPS, mode=selected_mode, env_config=selected_env_config)
+        else:
+            print(f"\n❌ 找不到指定的权重文件！请确保路径正确: {selected_model}")
+            
+    elif choice in ['3', '4']:
+        if not os.path.exists(SAFE_DATA_PATH) or not os.path.exists(AGGRESSIVE_DATA_PATH):
+            print("\n❌ 找不到源数据集！请打开脚本末尾，将 SAFE_DATA_PATH 或 AGGRESSIVE_DATA_PATH 替换为您实际生成的数据文件夹。")
+        else:
+            safe_ratio = 0.8
+            safe_name = extract_model_name(SAFE_DATA_PATH)
+            agg_name = extract_model_name(AGGRESSIVE_DATA_PATH)
+            
+            if choice == '3':
+                mix_label = f"{safe_ratio:.1f}{safe_name}_{1.0 - safe_ratio:.1f}{agg_name}"
+            else:
+                mix_label = f"smart_{safe_ratio:.1f}{safe_name}_{1.0 - safe_ratio:.1f}{agg_name}"
+                
+            save_dir = os.path.join(PROJECT_ROOT, "data", "expert_data", target_env, f"dataset_mixed_{mix_label}_{timestamp_now}")
+            
+            if choice == '3':
+                mix_datasets(SAFE_DATA_PATH, AGGRESSIVE_DATA_PATH, save_dir, target_total_steps=TARGET_STEPS, safe_ratio=safe_ratio)
+            else:
+                smart_mix_datasets(SAFE_DATA_PATH, AGGRESSIVE_DATA_PATH, save_dir, env_name=target_env, target_total_steps=TARGET_STEPS, safe_ratio=safe_ratio)

@@ -61,7 +61,7 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     print("=" * 60)
 
     # 智能路由判定：根据 model_id 自动识别算法 (兼容老名字 Diff/diff 和新名字 DM / DH)
-    is_diff = "Diff" in model_id or "diff" in model_id or "DM" in model_id or "DH" in model_id
+    is_diff = "Diff" in model_id or "diff" in model_id or "DM" in model_id or "DH" in model_id or "DR" in model_id
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 🚨 核心改造：根据模型类型和评估模式，动态选择算法包装器
@@ -433,7 +433,8 @@ if __name__ == "__main__":
             "DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
         }
     elif TARGET_ENV == "racetrack-v0":
-        EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R08_mode1_XXXXXX/expert_transitions.npz"
+        #EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R05_mode1_20260506_011817/expert_transitions.npz"
+        EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_mixed_0.8R05_0.2R01_20260506_142446/expert_transitions_mixed_0.8R05_0.2R01.npz"
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
             #"R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
@@ -450,26 +451,37 @@ if __name__ == "__main__":
             #"R082": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_004728/sac_racetrack_final.pth", "display_name": "R082 专家底座"},
             
 
-            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
-            "R011": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "display_name": "R011 基础 SAC"},
-            "R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260503_232841/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
-            "R022": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "display_name": "R022 速度优先"},
-            "R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260504_014115/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
-            "R033": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "display_name": "R033 安全优先"},
-            "R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260504_035840/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
-            "R044": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "display_name": "R044 极限漂移"},
-            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260504_061123/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
-            "R055": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R055 平滑赛车线"},
-            "R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260504_082337/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
-            "R066": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "display_name": "R066 宽域动态"},
-            "R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260504_103444/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
-            "R077": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "display_name": "R077 零容忍"},
-            "R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_124633/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
-            "R088": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "display_name": "R088 专家底座"},
-            # "DR1": {"path": "outputs/racetrack-v0/models/DiffSAC_DR1_Pure_BC_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR1 纯 BC 克隆"},
-            # "DR2": {"path": "outputs/racetrack-v0/models/DiffSAC_DR2_Micro_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR2 微引导"},
-            # "DR3": {"path": "outputs/racetrack-v0/models/DiffSAC_DR3_Standard_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR3 标准引导"},
-            # "DR4": {"path": "outputs/racetrack-v0/models/DiffSAC_DR4_Strong_Q_XXXXXX/online_finetune/diff_sac_ep400.pth", "display_name": "DR4 强力干预"},
+            #"R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
+            #"R011": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "display_name": "R011 基础 SAC"},
+            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260503_232841/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
+            #"R022": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "display_name": "R022 速度优先"},
+            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260504_014115/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
+            #"R033": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "display_name": "R033 安全优先"},
+            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260504_035840/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
+            #"R044": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "display_name": "R044 极限漂移"},
+            #"R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260504_061123/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
+            #"R055": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R055 平滑赛车线"},
+            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260504_082337/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
+            #"R066": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "display_name": "R066 宽域动态"},
+            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260504_103444/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
+            #"R077": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "display_name": "R077 零容忍"},
+            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_124633/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
+            #"R088": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "display_name": "R088 专家底座"},
+            
+            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R05 单专家底座"},
+            
+            # === 第一期 diff-SAC 实验 ===
+            "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260506_013340/online_finetune/diff_sac_ep400.pth", "display_name": "DR01 纯 BC 克隆"},
+            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260506_021118/online_finetune/diff_sac_ep400.pth", "display_name": "DR02 微引导"},
+            "DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260506_025209/online_finetune/diff_sac_ep400.pth", "display_name": "DR03 标准引导"},
+            "DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260506_032647/online_finetune/diff_sac_ep400.pth", "display_name": "DR04 强力干预"},
+
+            # === 第二期 Diff-SAC 混合专家实验 ===
+            # 注意：请将下面的 XXXXXX 替换为您实际通宵跑出来的混合模型时间戳
+            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260506_144146/online_finetune/diff_sac_ep400.pth", "display_name": "DR05 混合纯BC"},
+            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260506_150630/online_finetune/diff_sac_ep400.pth", "display_name": "DR06 混合微引导"},
+            "DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944/online_finetune/diff_sac_ep400.pth", "display_name": "DR07 混合标引导"},
+            "DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916/online_finetune/diff_sac_ep400.pth", "display_name": "DR08 混合强干预"},
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
