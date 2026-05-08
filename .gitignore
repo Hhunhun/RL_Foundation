@@ -10,6 +10,7 @@ outputs/*/logs/*
 outputs/*/models/*
 outputs/*/videos/*
 outputs/*/eval_results/*
+outputs/*/train_results/*
 
 old_scripts/aban_outputs/*/logs/*
 old_scripts/aban_outputs/*/models/*

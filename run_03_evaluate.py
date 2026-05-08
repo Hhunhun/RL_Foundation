@@ -15,6 +15,7 @@ import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import seaborn as sns
 from datetime import datetime
 import warnings
 
@@ -35,9 +36,37 @@ from algorithms.diffusion_sac.diff_sac_agent import DiffSACAgent
 from core.offline_buffer import MixedReplayBuffer
 from envs import create_environment
 
-# 统一设置中文字体，防止 matplotlib 画图时出现乱码 (针对 Windows 系统)
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
+def set_publication_style():
+    """
+    全局学术期刊图表样式配置滤镜，支持高度个性化排版定制。
+    """
+    custom_params = {
+        # --- 字体配置 (注意中文兼容性) ---
+        "font.family": "sans-serif",      # 默认字体族 (若需纯英文论文可改为 "serif")
+        "font.sans-serif": ["SimSun", "SimHei", "PingFang SC", "Microsoft YaHei", "sans-serif"], # 中文后备字体栈，优先使用宋体(SimSun)
+        "font.serif": ["SimSun", "Times New Roman"],# 衬线字体也加入宋体防乱码
+        "font.size": 12,                  # 全局基础字号
+        
+        # --- 轴与标签字号配置 ---
+        "axes.titlesize": 14,             # 图表标题字号
+        "axes.labelsize": 12,             # 坐标轴标签字号
+        "xtick.labelsize": 10,            # X轴刻度字号
+        "ytick.labelsize": 10,            # Y轴刻度字号
+        "legend.fontsize": 10,            # 图例字号 (如需使用图例)
+        
+        # --- 线条与外框配置 ---
+        "lines.linewidth": 2.0,           # 全局线宽
+        "axes.edgecolor": "black",        # 强制显示坐标轴外框
+        "axes.linewidth": 1.2,            # 外框线宽 (略微加粗，更符合双栏排版)
+        "axes.unicode_minus": False,      # 解决负号显示为方块的乱码问题
+        
+        # --- 输出保存配置 ---
+        "figure.figsize": (8.0, 6.0),     # 默认画幅：宽 8.0 英寸，高 6.0 英寸 (4:3 比例，更适合 12 号字体的展示)
+        "figure.dpi": 300,                # 默认分辨率 (学术期刊通常要求 300 或 600)
+        "savefig.bbox": "tight"           # 保存时自动裁剪多余空白边距
+    }
+    
+    sns.set_theme(style="whitegrid", rc=custom_params)
 
 # ----------------------------------------------------
 # 🔒 定义全局评估基础种子，并预先生成极度离散的测试种子库
@@ -267,20 +296,55 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     自动生成学术级对比箱线图和柱状图。
     包含四张核心图表：回报箱线图、策略方差柱状图、存活率柱状图、均速柱状图。
     """
+    # 激活全局学术样式滤镜
+    set_publication_style()
     os.makedirs(save_dir, exist_ok=True)
     model_ids = list(all_results.keys())
     display_labels = [models_to_evaluate[mid]["display_name"] for mid in model_ids]
-    colors = plt.cm.tab10(np.linspace(0, 1, len(model_ids)))
+    
+    # --- 采用《Nature》顶级期刊高对比度色系 (NPG Academic Palette) ---
+    # 保持与训练曲线 (run_04) 绝对统一的视觉风格
+    academic_colors = [
+        "#8491B4", # 莫灰紫 (Slate Purple)
+        "#91D1C2", # 薄荷青 (Mint)
+        "#E64B35", # 胭脂红 (Carmine Red)
+        "#4DBBD5", # 蔚蓝色 (Cerulean Blue)
+        "#00A087", # 翠绿色 (Teal Green)
+        "#3C5488", # 午夜蓝 (Midnight Blue)
+        "#F39B7F", # 珊瑚粉 (Salmon Pink)
+        "#DC0000", # 深红色 (Crimson)
+        "#7E6148", # 咖啡褐 (Coffee Brown)
+    ]
+    colors = sns.color_palette(academic_colors, n_colors=len(model_ids))
+
+    def _save_and_close_fig(filename_base):
+        """内部辅助函数：消除重复的图表保存代码"""
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, f'{filename_base}.png'), dpi=300)
+        plt.savefig(os.path.join(save_dir, f'{filename_base}.pdf'), format='pdf', bbox_inches='tight')
+        plt.close()
 
     # ----------------------------------------------------
     # 图 1：累计奖励箱线图 (新增均值文本标注)
     # ----------------------------------------------------
-    plt.figure(figsize=(12, 7))
+    plt.figure(figsize=(8.0, 6.0)) # 放大画幅，保持 4:3 比例，使 12 号字体显示更舒展
     reward_data = [all_results[mid]['raw_rewards'] for mid in model_ids]
-    # showfliers=False 会隐藏离群点，使得主流分布清晰可见
-    plt.boxplot(reward_data, labels=display_labels, showmeans=True, showfliers=False) # 使用 display_labels
-    plt.title('规控策略演进与消融实验对比 (Cumulative Reward)', fontsize=14, fontweight='bold')
-    plt.ylabel('Episode Reward (Outliers Hidden)', fontsize=12)
+    
+    # 美学升级：使用实体填充的箱线图，定制均值点和中位数线
+    bplot = plt.boxplot(reward_data, labels=display_labels, showmeans=True, showfliers=False, patch_artist=True,
+                        boxprops=dict(color='black', linewidth=1.2),
+                        capprops=dict(color='black', linewidth=1.2),
+                        whiskerprops=dict(color='black', linewidth=1.2),
+                        medianprops=dict(color='firebrick', linewidth=2.0),
+                        meanprops=dict(marker='^', markeredgecolor='green', markerfacecolor='green', markersize=8))
+    
+    # 为每个箱体填上对应的调色盘颜色
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+        
+    plt.title('规控策略演进与消融实验对比 (Cumulative Reward)')
+    plt.ylabel('回合累计奖励')
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.7)
 
@@ -291,18 +355,16 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         plt.text(i + 1.05, mean_val, f'{mean_val:.1f}', va='center', ha='left',
                  color='green', fontsize=10, fontweight='bold')
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, '01_reward_boxplot.png'), dpi=300)
-    plt.close()
+    _save_and_close_fig('01_reward_boxplot')
 
     # ----------------------------------------------------
     # 🆕 图 2：策略方差/标准差柱状图 (越低代表模型越稳定)
     # ----------------------------------------------------
-    plt.figure(figsize=(12, 7))
+    plt.figure(figsize=(8.0, 6.0))
     std_rewards = [all_results[m]['std_reward'] for m in model_ids]
-    bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=0.8) # 使用 display_labels
-    plt.title('规控策略稳定性对比 (Standard Deviation of Reward)', fontsize=14, fontweight='bold') # 标题不变
-    plt.ylabel('Reward Std. Dev (Lower is Better)', fontsize=12)
+    bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=0.85, edgecolor='black', linewidth=1.2) # 增加物理描边
+    plt.title('规控策略稳定性对比 (Standard Deviation of Reward)')
+    plt.ylabel('奖励标准差')
     
     # [自适应 Y 轴] 顶部预留 15% 的动态空间，确保文本绝对不会出界
     max_std = max(std_rewards) if len(std_rewards) > 0 else 1.0
@@ -316,18 +378,16 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         # 文本高度偏移也改为图表量级的 2%，实现动态自适应
         plt.text(bar.get_x() + bar.get_width() / 2, yval + max_std * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, '02_reward_variance_bar.png'), dpi=300)
-    plt.close()
+    _save_and_close_fig('02_reward_variance_bar')
 
     # ----------------------------------------------------
     # 图 3：存活率柱状图
     # ----------------------------------------------------
-    plt.figure(figsize=(12, 7))
+    plt.figure(figsize=(8.0, 6.0))
     survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
-    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=0.9) # 使用 display_labels
-    plt.title('规控策略存活率对比 (Survival Rate)', fontsize=14, fontweight='bold') # 标题不变
-    plt.ylabel('Survival Rate (%)', fontsize=12)
+    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=0.85, edgecolor='black', linewidth=1.2)
+    plt.title('规控策略存活率对比 (Survival Rate)')
+    plt.ylabel('存活率 (%)')
     plt.ylim(0, 110) # 扩大顶部留白，防止 100.0% 标签被切角
     plt.xticks(rotation=25, ha='right')
     plt.grid(axis='y', linestyle='--', alpha=0.3)
@@ -337,18 +397,16 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         yval = bar.get_height()
         plt.text(bar.get_x() + bar.get_width() / 2, yval + 1.5, f'{yval:.1f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, '03_survival_rate_bar.png'), dpi=300)
-    plt.close()
+    _save_and_close_fig('03_survival_rate_bar')
 
     # ----------------------------------------------------
     # 🆕 图 4：平均纵向速度柱状图 (修复自适应 Y 轴)
     # ----------------------------------------------------
-    plt.figure(figsize=(12, 7))
+    plt.figure(figsize=(8.0, 6.0))
     mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
-    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=0.8) # 使用 display_labels
-    plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)', fontsize=14, fontweight='bold') # 标题不变
-    plt.ylabel('Mean Speed (m/s)', fontsize=12)
+    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=0.85, edgecolor='black', linewidth=1.2)
+    plt.title('规控策略平均纵向速度对比 (Mean Longitudinal Speed)')
+    plt.ylabel('平均纵向速度 (m/s)')
 
     # [重构自适应缩放] 根据数据的真实极差动态计算缩放边界，确保完美居中且不过度裁剪
     min_speed = min(mean_speeds) if len(mean_speeds) > 0 else 0.0
@@ -369,9 +427,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         # 文本高度也根据动态域按比例抬升
         plt.text(bar.get_x() + bar.get_width() / 2, yval + (y_max - y_min) * 0.02, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, '04_mean_speed_bar.png'), dpi=300)
-    plt.close()
+    _save_and_close_fig('04_mean_speed_bar')
 
     print(f"📈 4 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
@@ -380,7 +436,7 @@ if __name__ == "__main__":
     # ==========================================
     # 终端交互：选择评估环境
     # ==========================================
-    print("🤖 欢迎使用统一模型评估终端")
+    print("🤖 使用统一模型评估终端")
     print("==========================================")
     print("[H] Highway 环境 (highway-v0)")
     print("[M] Merge 环境 (merge-v0)")
@@ -472,16 +528,15 @@ if __name__ == "__main__":
             
             # === 第一期 diff-SAC 实验 ===
             "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260506_013340/online_finetune/diff_sac_ep400.pth", "display_name": "DR01 纯 BC 克隆"},
-            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260506_021118/online_finetune/diff_sac_ep400.pth", "display_name": "DR02 微引导"},
-            "DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260506_025209/online_finetune/diff_sac_ep400.pth", "display_name": "DR03 标准引导"},
-            "DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260506_032647/online_finetune/diff_sac_ep400.pth", "display_name": "DR04 强力干预"},
+            #"DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260506_021118/online_finetune/diff_sac_ep400.pth", "display_name": "DR02 微引导"},
+            #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260506_025209/online_finetune/diff_sac_ep400.pth", "display_name": "DR03 标准引导"},
+            #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260506_032647/online_finetune/diff_sac_ep400.pth", "display_name": "DR04 强力干预"},
 
             # === 第二期 Diff-SAC 混合专家实验 ===
-            # 注意：请将下面的 XXXXXX 替换为您实际通宵跑出来的混合模型时间戳
-            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260506_144146/online_finetune/diff_sac_ep400.pth", "display_name": "DR05 混合纯BC"},
-            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260506_150630/online_finetune/diff_sac_ep400.pth", "display_name": "DR06 混合微引导"},
-            "DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944/online_finetune/diff_sac_ep400.pth", "display_name": "DR07 混合标引导"},
-            "DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916/online_finetune/diff_sac_ep400.pth", "display_name": "DR08 混合强干预"},
+            #"DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260506_144146/online_finetune/diff_sac_ep400.pth", "display_name": "DR05 混合纯BC"},
+            #"DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260506_150630/online_finetune/diff_sac_ep400.pth", "display_name": "DR06 混合微引导"},
+            #"DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944/online_finetune/diff_sac_ep400.pth", "display_name": "DR07 混合标引导"},
+            #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916/online_finetune/diff_sac_ep400.pth", "display_name": "DR08 混合强干预"},
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
