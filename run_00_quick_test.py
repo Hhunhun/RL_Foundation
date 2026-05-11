@@ -87,7 +87,7 @@ def test_env_pipeline(env_name):
             pretrained_actor_path=bc_model_path,
             expert_data_path=data_path,
             env_name=env_name,
-            max_episodes=1,  # 仅测1局
+            max_steps=50,    # [修复] 统一改用步数驱动，极速测试50步
             batch_size=1,
             q_weight=0.01,
             lr=3e-4,

@@ -72,8 +72,8 @@ def run_single_experiment(config):
     # 路径修复：使用绝对路径，彻底杜绝路径漂移问题
     base_output_dir = os.path.join(PROJECT_ROOT, "outputs")
     
-    # 优化1：防止 Logger 内部再次拼接 SAC_ 和时间戳导致名字前后重复。传极简的 config name。
-    logger = Logger(log_dir=os.path.join(base_output_dir, env_name, "logs"), env_name=config['name'])
+    # 给 Logger 传入明确的算法前缀，使其生成的文件夹格式带有 SAC_ 前缀
+    logger = Logger(log_dir=os.path.join(base_output_dir, env_name, "logs"), env_name=f"SAC_{config['name']}")
 
     model_save_dir = os.path.join(base_output_dir, env_name, "models", run_id)
     os.makedirs(model_save_dir, exist_ok=True)
@@ -82,11 +82,12 @@ def run_single_experiment(config):
     print(f"📁 本次运行的模型权重将保存在: {model_save_dir}")
 
     max_steps = config["max_steps"]
-    start_steps = 2000
+    start_steps = 1000
     batch_size = 256
     total_steps = 0
     episode = 0
     reward_scale = 1.0
+    consecutive_quick_deaths = 0  # 新增：连续暴毙计数器
 
     # 获取目标参数
     target_jerk = config["wrapper_config"].get("jerk_weight", 0.0)
@@ -97,7 +98,7 @@ def run_single_experiment(config):
         # 📈 阶段一：课程学习 (0 - 800局) 
         # 面对强制 TTC 相撞，前期必须放开方向盘惩罚，让模型敢于变道
         # ==========================================
-        warmup_episodes = 800
+        warmup_episodes = 500
         if episode < warmup_episodes:
             cur_jerk = target_jerk * (episode / warmup_episodes)
             cur_steering = target_steering * (episode / warmup_episodes)
@@ -110,8 +111,8 @@ def run_single_experiment(config):
         # 📉 阶段二：学习率衰减 (1500局以后)
         # 固化策略，防止因 SAC 探索导致高分后突然崩盘
         # ==========================================
-        decay_start_ep = 1500
-        decay_duration = 1500 
+        decay_start_ep = 800
+        decay_duration = 500 
         min_lr = 1e-5
         cur_lr = initial_lr
         
@@ -172,6 +173,21 @@ def run_single_experiment(config):
 
         print(f"\r🏁 Episode {episode:03d} | Reward: {episode_reward:5.1f} | Steps: {episode_steps:3d} | LR: {cur_lr:.1e} | C_Loss: {avg_c_loss:.3f}")
 
+        # ==========================================
+        # 🛡️ 硬件级保护机制：防“1步暴毙”内存溢出
+        # ==========================================
+        if episode_steps <= 3:
+            consecutive_quick_deaths += 1
+        else:
+            consecutive_quick_deaths = 0
+            
+        if consecutive_quick_deaths >= 5:
+            import time
+            time.sleep(0.5)  # 暂停 0.5 秒，让系统回收资源
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
         if episode % 200 == 0:
             checkpoint_path = os.path.join(model_save_dir, f"sac_merge_ep{episode}.pth")
             agent.save_model(checkpoint_path)
@@ -215,16 +231,16 @@ def run_single_experiment(config):
 
 if __name__ == "__main__":
     experiment_configs = [
-        # {
-        #     "name": "M1_Base_Merge",
-        #     "max_steps": 80000,
-        #     "env_config": {
-        #         "collision_reward": -5.0, 
-        #         "high_speed_reward": 1.0, 
-        #         "reward_speed_range": [15, 25],
-        #     },
-        #     "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2}
-        # },
+        {
+            "name": "M01_Base_Merge",
+            "max_steps": 100000,
+            "env_config": {
+                "collision_reward": -5.0, 
+                "high_speed_reward": 1.0, 
+                "reward_speed_range": [15, 25],
+            },
+            "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2}
+        },
         # {
         #     "name": "M2_Efficient_Smooth",
         #     "max_steps": 100000, 
@@ -261,46 +277,46 @@ if __name__ == "__main__":
         #     },
         #     "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2}
         # },
-        {
-            "name": "M5_Patient_Merger",
-            "max_steps": 200000,
-            "env_config": {
-                "collision_reward": -15.0,
-                "high_speed_reward": 1.0,
-                "reward_speed_range": [15, 20], # 配合 15m/s 的苟活底线
-            },
-            "wrapper_config": {"jerk_weight": 0.3, "steering_weight": 0.15} 
-        },
-        {
-            "name": "M6_Extreme_Penalty",
-            "max_steps": 200000,
-            "env_config": {
-                "collision_reward": -50.0, 
-                "high_speed_reward": 1.0,
-                "reward_speed_range": [15, 25],
-            },
-            "wrapper_config": {"jerk_weight": 0.1, "steering_weight": 0.05} 
-        },
-        {
-            "name": "M7_Smooth_Marathon",
-            "max_steps": 300000, 
-            "env_config": {
-                "collision_reward": -15.0,
-                "high_speed_reward": 1.5,
-                "reward_speed_range": [15, 25],
-            },
-            "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2} 
-        },
-        {
-            "name": "M8_Ultimate_Merge",
-            "max_steps": 300000, 
-            "env_config": {
-                "collision_reward": -30.0, 
-                "high_speed_reward": 1.0,  
-                "reward_speed_range": [15, 25], # 底线保持在 15m/s
-            },
-            "wrapper_config": {"jerk_weight": 0.3, "steering_weight": 0.1}
-        },
+        #{
+        #    "name": "M5_Patient_Merger",
+        #    "max_steps": 200000,
+        #    "env_config": {
+        #        "collision_reward": -15.0,
+        #        "high_speed_reward": 1.0,
+        #       "reward_speed_range": [15, 20], # 配合 15m/s 的苟活底线
+        #    },
+        #    "wrapper_config": {"jerk_weight": 0.3, "steering_weight": 0.15} 
+        #},
+        #{
+        #    "name": "M6_Extreme_Penalty",
+        #    "max_steps": 200000,
+        #    "env_config": {
+        #        "collision_reward": -50.0, 
+        #        "high_speed_reward": 1.0,
+        #        "reward_speed_range": [15, 25],
+        #    },
+        #    "wrapper_config": {"jerk_weight": 0.1, "steering_weight": 0.05} 
+        #},
+        #{
+        #    "name": "M7_Smooth_Marathon",
+        #    "max_steps": 300000, 
+        #    "env_config": {
+        #        "collision_reward": -15.0,
+        #        "high_speed_reward": 1.5,
+        #        "reward_speed_range": [15, 25],
+        #    },
+        #    "wrapper_config": {"jerk_weight": 0.5, "steering_weight": 0.2} 
+        #},
+        #{
+        #    "name": "M8_Ultimate_Merge",
+        #    "max_steps": 300000, 
+        #    "env_config": {
+        #        "collision_reward": -30.0, 
+        #        "high_speed_reward": 1.0,  
+        #        "reward_speed_range": [15, 25], # 底线保持在 15m/s
+        #    },
+        #    "wrapper_config": {"jerk_weight": 0.3, "steering_weight": 0.1}
+        #},
     ]
 
     for config in experiment_configs:

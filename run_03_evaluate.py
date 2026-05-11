@@ -190,7 +190,7 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     # ==========================================
     print(f"\n⚡ [阶段 2] 执行 {num_episodes} 局大样本闭门测试...")
     env_eval = create_environment(env_name, is_eval=True, algo=algo_type) # 再次确认开启纯净评估模式
-    metrics = {'rewards': [], 'lengths': [], 'speeds': [], 'crashes': 0}
+    metrics = {'rewards': [], 'lengths': [], 'speeds': [], 'crashes': 0, 'actions': []}
 
     for ep in range(num_episodes):
         # 🔒 抽取离散测试种子，通过引入剧烈的初始态波动，彻底粉碎单一种子池导致的过拟合陷阱
@@ -207,6 +207,9 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
             else:
                 action = agent.select_action(state, evaluate=True)
 
+            # [新增] 收集动作数据用于绘制 4.3.3 节的二维分布散点图
+            metrics['actions'].append(action.copy())
+            
             state, reward, terminated, truncated, info = env_eval.step(action)
             ep_reward += reward
             ep_steps += 1
@@ -261,7 +264,8 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
         'std_reward': np.std(metrics['rewards']),
         'survival_rate': (num_episodes - metrics['crashes']) / num_episodes * 100,
         'mean_speed': np.mean(metrics['speeds']),
-        'raw_rewards': metrics['rewards']
+        'raw_rewards': metrics['rewards'],
+        'actions': np.array(metrics['actions']) # 暴露出全部的动作张量
     }
 
     print(f"\n📊 [{display_label}] 评估报告:")
@@ -306,8 +310,8 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 保持与训练曲线 (run_04) 绝对统一的视觉风格
     academic_colors = [
         "#8491B4", # 莫灰紫 (Slate Purple)
-        "#91D1C2", # 薄荷青 (Mint)
         "#E64B35", # 胭脂红 (Carmine Red)
+        "#91D1C2", # 薄荷青 (Mint)
         "#4DBBD5", # 蔚蓝色 (Cerulean Blue)
         "#00A087", # 翠绿色 (Teal Green)
         "#3C5488", # 午夜蓝 (Midnight Blue)
@@ -321,7 +325,8 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         """内部辅助函数：消除重复的图表保存代码"""
         plt.tight_layout()
         plt.savefig(os.path.join(save_dir, f'{filename_base}.png'), dpi=300)
-        plt.savefig(os.path.join(save_dir, f'{filename_base}.pdf'), format='pdf', bbox_inches='tight')
+        # 暂时关闭 PDF 导出，以提升出图速度，后续需要写论文时可取消注释
+        # plt.savefig(os.path.join(save_dir, f'{filename_base}.pdf'), format='pdf', bbox_inches='tight')
         plt.close()
 
     # ----------------------------------------------------
@@ -429,7 +434,96 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
 
     _save_and_close_fig('04_mean_speed_bar')
 
-    print(f"📈 4 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
+    # ----------------------------------------------------
+    # [准备子图布局] 动态计算模型数量，建立 1 行 N 列的画布
+    # ----------------------------------------------------
+    n_models = len(model_ids)
+    subplot_width = 5.0 # 每个子图固定 5 英寸宽
+    
+    # ----------------------------------------------------
+    # 🆕 图 5：动作分布 - 极小散点双子图 (Scatter Side-by-Side)
+    # ----------------------------------------------------
+    fig, axes = plt.subplots(1, n_models, figsize=(subplot_width * n_models, 5.0), sharex=True, sharey=True)
+    if n_models == 1: axes = [axes]
+    
+    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
+        ax = axes[i]
+        actions = all_results[mid].get('actions', np.array([]))
+        if len(actions) > 0:
+            actions = actions.reshape(actions.shape[0], -1)
+            if actions.shape[1] >= 2:
+                # 策略：极小 Size + 极低 Alpha
+                ax.scatter(actions[:, 1], actions[:, 0], color=color, alpha=0.2, s=10, edgecolors='none')
+                
+        ax.set_title(label, color=color, fontweight='bold')
+        ax.set_xlabel('横向控制 / 转向')
+        if i == 0: ax.set_ylabel('纵向控制 / 加减速')
+        ax.set_xlim(-1.05, 1.05)
+        ax.set_ylim(-1.05, 1.05)
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+    _save_and_close_fig('05_action_scatter_1xN')
+
+    # ----------------------------------------------------
+    # 🆕 图 6：动作分布 - 核密度分布双子图 (KDE Side-by-Side)
+    # ----------------------------------------------------
+    fig, axes = plt.subplots(1, n_models, figsize=(subplot_width * n_models, 5.0), sharex=True, sharey=True)
+    if n_models == 1: axes = [axes]
+    
+    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
+        ax = axes[i]
+        actions = all_results[mid].get('actions', np.array([]))
+        if len(actions) > 0:
+            actions = actions.reshape(actions.shape[0], -1)
+            if actions.shape[1] >= 2:
+                x_plot, y_plot = actions[:, 1], actions[:, 0]
+                # 防止数万点导致 KDE 渲染卡死，限流下采样
+                if len(x_plot) > 10000:
+                    idx = np.random.choice(len(x_plot), 10000, replace=False)
+                    x_plot, y_plot = x_plot[idx], y_plot[idx]
+                    
+                try:
+                    # fill=True: 绘制如热力图般渐变的实心分布区域；thresh=0.05: 隐藏边缘极低密度的孤点
+                    sns.kdeplot(x=x_plot + np.random.normal(0, 1e-5, size=x_plot.shape), 
+                                y=y_plot + np.random.normal(0, 1e-5, size=y_plot.shape), 
+                                color=color, fill=True, alpha=0.8, thresh=0.05, levels=10, ax=ax)
+                except Exception:
+                    pass
+                
+        ax.set_title(label, color=color, fontweight='bold')
+        ax.set_xlabel('横向控制 / 转向')
+        if i == 0: ax.set_ylabel('纵向控制 / 加减速')
+        ax.set_xlim(-1.05, 1.05)
+        ax.set_ylim(-1.05, 1.05)
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+    _save_and_close_fig('06_action_kde_1xN')
+
+    # ----------------------------------------------------
+    # 🆕 图 7：动作分布 - 六边形分箱双子图 (Hexbin Side-by-Side)
+    # ----------------------------------------------------
+    fig, axes = plt.subplots(1, n_models, figsize=(subplot_width * n_models, 5.0), sharex=True, sharey=True)
+    if n_models == 1: axes = [axes]
+    
+    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
+        ax = axes[i]
+        actions = all_results[mid].get('actions', np.array([]))
+        if len(actions) > 0:
+            actions = actions.reshape(actions.shape[0], -1)
+            if actions.shape[1] >= 2:
+                # gridsize 控制蜂窝细度，mincnt=1 去除空白区域，cmap 选用美观的深海/火箭色系
+                ax.hexbin(actions[:, 1], actions[:, 0], gridsize=30, cmap='mako_r', mincnt=1, alpha=0.9)
+                
+        ax.set_title(label, color=color, fontweight='bold')
+        ax.set_xlabel('横向控制 / 转向')
+        if i == 0: ax.set_ylabel('纵向控制 / 加减速')
+        ax.set_xlim(-1.05, 1.05)
+        ax.set_ylim(-1.05, 1.05)
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+    _save_and_close_fig('07_action_hexbin_1xN')
+
+    print(f"📈 7 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
 
 if __name__ == "__main__":
@@ -461,7 +555,7 @@ if __name__ == "__main__":
         EXPERT_DATA_PATH = "data/expert_data/merge-v0/dataset_base_20260422_014135/expert_transitions.npz"
         models_to_evaluate = {
             # === 第一期基础实验（加入TTC） ===
-            #"M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260420_150323/sac_merge_final.pth", "display_name": "M1 基础生存"},
+            "M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260420_150323/sac_merge_final.pth", "display_name": "M1 基础生存"},
             #"M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "display_name": "M2 高效平滑"},
             #"M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
             #"M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M4 安全至上"},
@@ -471,22 +565,16 @@ if __name__ == "__main__":
             #"M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M8 终极汇入"},
 
             # === 第一期 diff-SAC 实验 ===
-            #"DM1": {"path": "outputs/merge-v0/models/DiffSAC_DM1_Zero_Q_20260422_020015/online_finetune/diff_sac_ep400.pth", "display_name": "DM1 纯模仿"},
-            #"DM2": {"path": "outputs/merge-v0/models/DiffSAC_DM2_Micro_Q_20260422_021730/online_finetune/diff_sac_ep400.pth", "display_name": "DM2 保守试探"},
-            "DM3": {"path": "outputs/merge-v0/models/DiffSAC_DM3_Gentle_Q_20260422_023433/online_finetune/diff_sac_ep400.pth", "display_name": "DM3 微弱提速"},
-            "DM4": {"path": "outputs/merge-v0/models/DiffSAC_DM4_Standard_Q_20260422_025352/online_finetune/diff_sac_ep400.pth", "display_name": "DM4 激进提速"},
-
-            # === 第二期 diff-SAC 实验 ===
-            #"DM5": {"path": "outputs/merge-v0/models/DiffSAC_DM5_Mild_Transition_20260423_030738/online_finetune/diff_sac_ep400.pth", "display_name": "DM5 破冰试探"},
-            #"DM6": {"path": "outputs/merge-v0/models/DiffSAC_DM6_Moderate_Override_20260423_032715/online_finetune/diff_sac_ep400.pth", "display_name": "DM6 中度干预"},
-            #"DM7": {"path": "outputs/merge-v0/models/DiffSAC_DM7_Strong_Override_20260423_033850/online_finetune/diff_sac_ep400.pth", "display_name": "DM7 强力干预"},
-            #"DM8": {"path": "outputs/merge-v0/models/DiffSAC_DM8_Extreme_Domination_20260423_034901/online_finetune/diff_sac_ep400.pth", "display_name": "DM8 极限干预"},
+            #"DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_.../diff_sac_final.pth", "display_name": "DM01 纯 BC 克隆"},
+            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_.../diff_sac_final.pth", "display_name": "DM02 微引导"},
+            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_.../diff_sac_final.pth", "display_name": "DM03 标准引导"},
+            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_.../diff_sac_final.pth", "display_name": "DM04 强力干预"},
 
             # === 第三期 diff-SAC 实验 (基于 100% M4 专家数据) ===
-            "DM9": {"path": "outputs/merge-v0/models/DiffSAC_DM9_M4_Prior_Only_20260423_184425/online_finetune/diff_sac_ep400.pth", "display_name": "DM9 M4纯模仿"},
-            "DM10": {"path": "outputs/merge-v0/models/DiffSAC_DM10_M4_Standard_Q_20260423_190251/online_finetune/diff_sac_ep400.pth", "display_name": "DM10 M4弱度干预"},
-            "DM11": {"path": "outputs/merge-v0/models/DiffSAC_DM11_M4_Strong_Q_20260423_191253/online_finetune/diff_sac_ep400.pth", "display_name": "DM11 M4强力干预"},
-            "DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
+            #"DM9": {"path": "outputs/merge-v0/models/DiffSAC_DM9_M4_Prior_Only_20260423_184425/online_finetune/diff_sac_ep400.pth", "display_name": "DM9 M4纯模仿"},
+            #"DM10": {"path": "outputs/merge-v0/models/DiffSAC_DM10_M4_Standard_Q_20260423_190251/online_finetune/diff_sac_ep400.pth", "display_name": "DM10 M4弱度干预"},
+            #"DM11": {"path": "outputs/merge-v0/models/DiffSAC_DM11_M4_Strong_Q_20260423_191253/online_finetune/diff_sac_ep400.pth", "display_name": "DM11 M4强力干预"},
+            #"DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
         }
     elif TARGET_ENV == "racetrack-v0":
         #EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R05_mode1_20260506_011817/expert_transitions.npz"
@@ -528,7 +616,7 @@ if __name__ == "__main__":
             
             # === 第一期 diff-SAC 实验 ===
             "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260506_013340/online_finetune/diff_sac_ep400.pth", "display_name": "DR01 纯 BC 克隆"},
-            #"DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260506_021118/online_finetune/diff_sac_ep400.pth", "display_name": "DR02 微引导"},
+            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260506_021118/online_finetune/diff_sac_ep400.pth", "display_name": "DR02 微引导"},
             #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260506_025209/online_finetune/diff_sac_ep400.pth", "display_name": "DR03 标准引导"},
             #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260506_032647/online_finetune/diff_sac_ep400.pth", "display_name": "DR04 强力干预"},
 
@@ -544,10 +632,10 @@ if __name__ == "__main__":
             #"H1": {"path": "outputs/models/SAC_H1_20260329_150543/sac_highway_final.pth", "display_name": "H1 无约束 SAC"},
             #"H2": {"path": "outputs/models/SAC_H2_20260329_185751/sac_highway_final.pth", "display_name": "H2 越野飙车 SAC"},
             #"H3": {"path": "outputs/models/SAC_H3_20260330_010914/sac_highway_final.pth", "display_name": "H3 LQR 欠拟合 SAC"},
-            #"H5": {"path": "outputs/models/SAC_H5_20260330_135449/sac_highway_final.pth", "display_name": "H5 安全保守 SAC"},
+            "H5": {"path": "outputs/highway-v0/models/SAC_H5_20260330_135449/sac_highway_final.pth", "display_name": "H5 安全保守 SAC"},
             #"H6": {"path": "outputs/models/SAC_H6_20260330_213300/sac_highway_final.pth", "display_name": "H6 高效超车 SAC"},
 
-            #"DH1": {"path": "outputs/models/highway_DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "DH1 微弱 Q 引导"},
+            "DH1": {"path": "outputs/highway-v0/models/DiffSAC_DH1_20260405_031920/DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "DH1 微弱 Q 引导"},
             #"DH2": {"path": "outputs/models/DiffSAC_DH2_20260405_065603/diff_sac_ep400.pth", "display_name": "DH2 标准 Q 引导"},
             #"DH3": {"path": "outputs/models/DiffSAC_DH3_20260405_101704/diff_sac_ep400.pth", "display_name": "DH3 强力 Q 引导"},
             #"DH4": {"path": "outputs/models/DiffSAC_DH4_20260405_141352/diff_sac_ep500.pth", "display_name": "DH4 降学习率长跑"},

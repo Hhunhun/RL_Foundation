@@ -53,6 +53,7 @@ def main():
     total_steps = 0  # 全局步数计数器
     episode = 0  # 局数计数器 (仅用于日志记录和保存检查点)
     reward_scale = 1.0  # 奖励缩放因子
+    consecutive_quick_deaths = 0  # 新增：连续暴毙计数器
 
     print(f"\n🚀 引擎点火，目标 {max_steps} 步，开始自动驾驶魔鬼训练...")
 
@@ -113,6 +114,22 @@ def main():
 
         # 局末打印详尽的汇总指标
         print(f"\r🏁 Episode {episode:03d} | Reward: {episode_reward:5.1f} | Steps: {episode_steps:3d} | Total: {total_steps}/{max_steps} | C_Loss: {avg_c_loss:.3f} | A_Loss: {avg_a_loss:.3f}")
+
+        # ==========================================
+        # 🛡️ 硬件级保护机制：防“1步暴毙”内存溢出
+        # ==========================================
+        if episode_steps <= 3:
+            consecutive_quick_deaths += 1
+        else:
+            consecutive_quick_deaths = 0
+            
+        if consecutive_quick_deaths >= 5:
+            import time
+            import gc
+            time.sleep(0.5)
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # 定期保存检查点 (每跑完 100 局存一次档)
         if episode % 100 == 0:

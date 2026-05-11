@@ -85,6 +85,7 @@ def run_single_experiment(config):
     total_steps = 0
     episode = 0
     reward_scale = 1.0
+    consecutive_quick_deaths = 0  # 新增：连续暴毙计数器
 
     # 获取目标参数
     target_jerk = config["wrapper_config"].get("jerk_weight", 0.0)
@@ -166,6 +167,21 @@ def run_single_experiment(config):
         avg_c_loss = np.mean(c_loss_list) if c_loss_list else 0.0
 
         print(f"\r🏁 Episode {episode:03d} | Reward: {episode_reward:5.1f} | Steps: {episode_steps:3d} | LR: {cur_lr:.1e} | C_Loss: {avg_c_loss:.3f}")
+
+        # ==========================================
+        # 🛡️ 硬件级保护机制：防“1步暴毙”内存溢出
+        # ==========================================
+        if episode_steps <= 3:
+            consecutive_quick_deaths += 1
+        else:
+            consecutive_quick_deaths = 0
+            
+        if consecutive_quick_deaths >= 5:
+            import time
+            time.sleep(0.5)
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         if episode % 250 == 0:
             checkpoint_path = os.path.join(model_save_dir, f"sac_racetrack_ep{episode}.pth")

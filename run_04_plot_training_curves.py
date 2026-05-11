@@ -309,7 +309,14 @@ def plot_training_curves(models_dict, save_dir, tags_to_plot, smooth_weight=0.85
                 if lims.get("ylim") is not None:
                     ax.set_ylim(lims["ylim"])
                 
-            plt.legend(loc="best")
+            # 智能图例位置：优先左上角，若左侧数据高于右侧（如下降的Loss曲线），则放右上角避免遮挡
+            try:
+                left_val = np.mean([np.mean(d["smoothed_vals"][:max(1, len(d["smoothed_vals"])//3)]) for d in plot_cache if len(d["smoothed_vals"]) > 0])
+                right_val = np.mean([np.mean(d["smoothed_vals"][-max(1, len(d["smoothed_vals"])//3):]) for d in plot_cache if len(d["smoothed_vals"]) > 0])
+                legend_loc = "upper left" if left_val <= right_val else "upper right"
+            except Exception:
+                legend_loc = "upper left"
+            plt.legend(loc=legend_loc)
 
             plt.tight_layout()
             # 增加文件名前缀区分
@@ -347,15 +354,17 @@ if __name__ == "__main__":
     # ==========================================
     if TARGET_ENV == "merge-v0":
         models_to_plot = {
-            "SAC 稳健基准 (M4)": f"outputs/{TARGET_ENV}/logs/M4_Safety_First",
-            # "Diff-SAC 微引导 (DM3)": f"outputs/{TARGET_ENV}/logs/DM3_Gentle_Q_20260422_023433",
-            # "Diff-SAC 强引导 (DM4)": f"outputs/{TARGET_ENV}/logs/DM4_Standard_Q_20260422_025352",
+            "SAC 稳健基准 (M4)": f"outputs/{TARGET_ENV}/logs/SAC_M4_Safety_First_20260420_170911",
+            # "DM01 纯 BC 克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM01_Pure_BC_...",
+            # "DM02 微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM02_Micro_Q_...",
+            # "DM03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM03_Standard_Q_...",
+            # "DM04 强力干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM04_Strong_Q_...",
         }
     elif TARGET_ENV == "racetrack-v0":
         models_to_plot = {
             # === SAC 消融矩阵 (挑选极具代表性的策略) ===
-            #"R01 基础 SAC": f"outputs/{TARGET_ENV}/logs/SAC_R01_SAC_Baseline_20260505_033212",
-            #"R03 安全优先": f"outputs/{TARGET_ENV}/logs/SAC_R03_SAC_Safety_Priority_20260505_083207",
+            "R01 基础 SAC": f"outputs/{TARGET_ENV}/logs/SAC_R01_SAC_Baseline_20260505_033212",
+            "R03 安全优先": f"outputs/{TARGET_ENV}/logs/SAC_R03_SAC_Safety_Priority_20260505_083207",
             #"R04 极限漂移": f"outputs/{TARGET_ENV}/logs/SAC_R04_SAC_Extreme_Drift_20260505_110254",
             #"R05 平滑基准": f"outputs/{TARGET_ENV}/logs/SAC_R05_SAC_Smooth_Racing_20260505_131614",
             #"R08 专家底座": f"outputs/{TARGET_ENV}/logs/SAC_R08_SAC_Expert_Pro_20260505_184949",
@@ -363,11 +372,11 @@ if __name__ == "__main__":
             # === 第一期 diff-SAC 实验 ===
             "DR01 纯 BC 克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR01_Pure_BC_20260506_013340",
             "DR02 微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR02_Micro_Q_20260506_021118",
-            "DR03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR03_Standard_Q_20260506_025209",
+            #"DR03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR03_Standard_Q_20260506_025209",
             #"DR04 强力干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR04_Strong_Q_20260506_032647",
             
             # === 第二期 Diff-SAC 混合专家实验 ===
-            "DR05 混合纯BC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260506_144146",
+            #"DR05 混合纯BC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260506_144146",
             #"DR06 混合微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260506_150630",
             #"DR07 混合标引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944",
             #"DR08 混合强干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916",

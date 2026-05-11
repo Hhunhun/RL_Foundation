@@ -22,7 +22,7 @@ from core.offline_buffer import MixedReplayBuffer
 from algorithms.diffusion_sac.diff_sac_agent import DiffSACAgent
 
 
-def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="highway-v0", max_episodes=250, batch_size=256, q_weight=0.05, lr=3e-4, max_steps_per_episode=1000, run_name=None):
+def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="highway-v0", max_steps=100000, batch_size=256, q_weight=0.05, lr=3e-4, max_steps_per_episode=1000, run_name=None):
     print("=" * 60)
     print("🚀 [阶段三] Diffusion-RL 在线微调 (Demo Augmented RL 专家混合增强版)")
     print("=" * 60)
@@ -61,8 +61,10 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="hi
     writer = SummaryWriter(log_dir=log_dir)
 
     total_steps = 0
-    # 3. 核心在线交互与训练循环
-    for episode in range(max_episodes):
+    episode = 0
+    consecutive_quick_deaths = 0
+    # 3. 核心在线交互与训练循环 (按全局总步数控制)
+    while total_steps < max_steps:
         # env.reset() 返回的是带有物理量纲的原始状态 (例如速度为 20m/s，坐标为 150m)
         raw_state, _ = env.reset()
         episode_reward = 0
@@ -121,15 +123,39 @@ def train_online_diffusion(pretrained_actor_path, expert_data_path, env_name="hi
             writer.add_scalar("Metric/Q_Value", avg_q_val, episode)
 
         # 终端实时打印进度
-        print(f"🏁 Episode {episode + 1:03d} | Reward: {episode_reward:5.1f} | "
+        print(f"🏁 Episode {episode + 1:03d} | Total Steps: {total_steps}/{max_steps} | Reward: {episode_reward:5.1f} | "
               f"Steps: {episode_steps:3d} | Q_val: {avg_q_val:5.2f} | C_Loss: {avg_c_loss:.3f} | A_Loss: {avg_a_loss:.3f}")
+        
+        episode += 1
 
-        # --- 阶段存档 ---
-        if (episode + 1) % 50 == 0:
-            save_path = os.path.join(save_dir, f"diff_sac_ep{episode + 1}.pth")
-            # 只存档主 Actor 网络，后续在评估脚本中调用 load_pretrained_actor 时，它会自动同步给 EMA 网络
+        # ==========================================
+        # 🛡️ 硬件级保护机制：防“1步暴毙”内存溢出
+        # ==========================================
+        if episode_steps <= 3:
+            consecutive_quick_deaths += 1
+        else:
+            consecutive_quick_deaths = 0
+            
+        if consecutive_quick_deaths >= 5:
+            import time
+            import gc
+            time.sleep(0.5)
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        # --- 阶段存档 (按全局物理步数触发) ---
+        # 比如每隔 20,000 步存一次档，彻底摆脱局数依赖
+        if total_steps > 0 and total_steps % 20000 == 0:
+            save_path = os.path.join(save_dir, f"diff_sac_step{total_steps}.pth")
             torch.save(agent.actor.state_dict(), save_path)
             print(f"💾 模型已存档: {save_path}")
+
+    # 🚨 [核心修复] 循环结束后，必须保存最终定稿的权重！
+    # 否则在按步数强制截断退出循环后，会丢失训练成果
+    final_path = os.path.join(save_dir, "diff_sac_final.pth")
+    torch.save(agent.actor.state_dict(), final_path)
+    print(f"\n💾 最终模型已安全存档至: {final_path}")
 
     env.close()
     writer.close()
@@ -143,5 +169,5 @@ if __name__ == "__main__":
     train_online_diffusion(
         pretrained_actor_path=PRETRAINED_ACTOR_PATH,
         expert_data_path=EXPERT_DATA_PATH,
-        max_episodes=250
+        max_steps=100000
     )
