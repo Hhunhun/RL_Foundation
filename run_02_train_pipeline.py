@@ -115,8 +115,8 @@ if __name__ == "__main__":
     # 全局数据路径配置 (控制是否复用之前辛苦跑出来的专家数据)
     REUSE_DATA = True
 
-    # 🚨 动态配置：根据选择的环境切换专家模型和数据集路径
-    # 🚨🚨🚨 重要：请在应用新的文件夹结构后，手动更新以下 SAFE_MODEL_PATH 和 EXPERT_DATA_PATH 的值！
+    # 🚨 根据选择的环境切换专家模型和数据集路径
+    # 🚨 请在应用新的文件夹结构后，手动更新以下 SAFE_MODEL_PATH 和 EXPERT_DATA_PATH 的值！
     # 它们需要指向新结构下的正确路径，例如：
     # outputs/merge-v0/models/SAC_YYYYMMDD_HHMMSS/sac_merge_final.pth
     # data/expert_data/merge-v0/dataset_base_YYYYMMDD_HHMMSS/expert_transitions.npz
@@ -124,19 +124,18 @@ if __name__ == "__main__":
         # ==========================================
         # 🚨 [Merge 配置区] 同时定义单专家和混合专家的数据集路径
         # ==========================================
-        SINGLE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_M4_mode1_20260423_154904", "expert_transitions.npz")
-        # 🚨 请将 YOUR_MIXED_DATASET_HERE 替换为您实际生成的混合数据集的文件夹名
-        MIXED_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "YOUR_MIXED_DATASET_HERE", "expert_transitions_mixed.npz")
+        SINGLE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_M04_mode1_20260423_154904", "expert_transitions.npz")
+        MIXED_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_mixed_0.8M04_0.2M03_20260513_161828", "expert_transitions_mixed_0.8M04_0.2M03.npz")
         
         # 默认回退路径 (供 SMOKE_TEST 和 SINGLE 模式兜底使用)
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M04_Safety_First_20260420_170911", "sac_merge_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
         EXPERT_DATA_PATH = SINGLE_DATA_PATH
-        TARGET_DATA_STEPS = 20000 # 按照最新要求，采集 1-2 万步即可
+        TARGET_DATA_STEPS = 50000 
+    
     elif TARGET_ENV == "racetrack-v0":
         # ==========================================
         # 🚨 [Racetrack 配置区] 
-        # 同时定义单专家和混合专家的数据集路径，方便通宵模式一口气跑完
         # ==========================================
         SINGLE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R05_mode1_20260506_011817", "expert_transitions.npz")
         MIXED_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_mixed_0.8R05_0.2R01_20260506_142446", "expert_transitions_mixed_0.8R05_0.2R01.npz")
@@ -144,16 +143,22 @@ if __name__ == "__main__":
         # 默认回退路径 (供 SMOKE_TEST 和 SINGLE 模式兜底使用)
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R05_SAC_Smooth_Racing_20260505_131614", "sac_racetrack_final.pth")
         EXPERT_DATA_PATH = SINGLE_DATA_PATH
-            
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
-        
         TARGET_DATA_STEPS = 50000
     else:
-        # Highway 环境默认路径
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
-        SAFE_ENV_CONFIG = None
-        EXPERT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "highway-v0", "dataset_smart_mixed_90_10_20260413_031136", "expert_transitions_smart_90_10.npz")
+        # ==========================================
+        # 🚨 [Highway 配置区] 
+        # ==========================================
+        SINGLE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "highway-v0", "dataset_H02_mode1_20260513_161932", "expert_transitions.npz")
+        MIXED_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "highway-v0", "dataset_mixed_0.8H02_0.2H01_20260513_204225", "expert_transitions_mixed_0.8H02_0.2H01.npz")
+        
+        # 默认回退路径 (供 SMOKE_TEST 和 SINGLE 模式兜底使用)
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_H02_Safety_Priority_20260512_040012", "sac_highway_final.pth")
+        SAFE_ENV_CONFIG = {"vehicles_count": 25, "collision_reward": -5.0, "high_speed_reward": 0.2, "reward_speed_range": [15, 25]}
+        EXPERT_DATA_PATH = SINGLE_DATA_PATH
         TARGET_DATA_STEPS = 50000
+    
+    
     # ==========================================
     # 1. 统一的数据流准备 (Data Preparation)
     # ==========================================
@@ -272,85 +277,60 @@ if __name__ == "__main__":
         print("启动 [通宵挂机] 模式 - 参数矩阵轮询")
         print("🌟" * 30)
 
-        # 定义消融实验的参数矩阵 (Ablation Matrix)
-        experiment_configs = [
         # ==========================================
-        # 第一期消融实验矩阵
+        # Diff-SAC 针对 Highway 环境的初始探索矩阵
         # ==========================================
-            #{"name": "DH1_Gentle_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH2_Standard_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH3_Strong_Q", "bc_epochs": 50, "q_weight": 0.10, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH4_Stable_Long", "bc_epochs": 80, "q_weight": 0.05, "lr": 1e-4, "max_steps": 125000},
-        # ==========================================
-        # 第二期消融实验矩阵 (探寻极简与极致稳健)
-        # ==========================================
-            #{"name": "DH5_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH6_Bulletproof_BC", "bc_epochs": 120, "q_weight": 0.05, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH7_Frozen_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "max_steps": 125000},
-            #{"name": "DH8_Zero_Q_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000},
-        # ==========================================
-        # 第三期消融实验矩阵 (探寻 SOTA 的绝对极限)
-        # ==========================================
-            #{"name": "DH9_Ultimate_Safe_SOTA", "bc_epochs": 120, "q_weight": 0.005, "lr": 5e-5, "max_steps": 125000},
-            #{"name": "DH10_Accelerated_Finetune", "bc_epochs": 80, "q_weight": 0.005, "lr": 1e-4, "max_steps": 125000},
-            #{"name": "DH11_Ultra_Micro_Q", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH12_Frozen_Marathon", "bc_epochs": 80, "q_weight": 0.005, "lr": 5e-5, "max_steps": 200000},
-        # ==========================================
-        # 第四期消融实验矩阵 (黄金融合与终极天花板)
-        # 核心策略：废弃极低学习率，融合最强先验 (BC=120) 与最优微导 (q=0.01~0.001)
-        # ==========================================
-            #{"name": "DH13_Unbreakable_SOTA", "bc_epochs": 120, "q_weight": 0.001, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH14_Thick_Shield_Gentle_Q", "bc_epochs": 120, "q_weight": 0.01, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH15_Deep_BC_Control", "bc_epochs": 120, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000},
-            #{"name": "DH16_Ultra_Micro_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "max_steps": 150000},
-        # ==========================================
-        # 第五期实验矩阵 (混合数据集突围测试)
-        # 核心目的：验证混合流形能否在保持高存活率的同时，打破 22 m/s 均速天花板
-        # ==========================================
-            # {"name": "DH17_Mixed_BC_Control", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000},
-            # {"name": "DH18_Mixed_Ultra_Micro", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "max_steps": 100000},
-            # {"name": "DH19_Mixed_Thicker_Base", "bc_epochs": 80, "q_weight": 0.001, "lr": 3e-4, "max_steps": 100000},
-            # {"name": "DH20_Mixed_Marathon", "bc_epochs": 50, "q_weight": 0.001, "lr": 3e-4, "max_steps": 150000},
+        highway_experiment_configs = [
+            # === 第一期：单专家消融 (未完成) ===
+            #{"name": "DH01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DH02_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DH03_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DH04_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+
+            # === 第二期：混合专家突围 (未完成) ===
+            # {"name": "DH05_Mixed_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
+            # {"name": "DH06_Mixed_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
+            # {"name": "DH07_Mixed_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
+            # {"name": "DH08_Mixed_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
         ]
 
         # ==========================================
         # Diff-SAC 针对 Merge 环境的初始探索矩阵
         # ==========================================
         merge_experiment_configs = [
-            # === 第一期：单专家消融 (Single Expert) ===
-            {"name": "DM01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
-            {"name": "DM02_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
-            {"name": "DM03_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
-            {"name": "DM04_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
+            # === 第一期：单专家消融 (已完成) ===
+            #{"name": "DM01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DM02_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DM03_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DM04_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 100000, "data_path": SINGLE_DATA_PATH},
 
-            # === 第二期：混合专家突围 (Mixed Experts) ===
-            # {"name": "DM05_Mixed_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
-            # {"name": "DM06_Mixed_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
-            # {"name": "DM07_Mixed_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
-            # {"name": "DM08_Mixed_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
+            # === 第二期：混合专家突围 (进行中) ===
+            {"name": "DM05_Mixed_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
+            {"name": "DM06_Mixed_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
+            {"name": "DM07_Mixed_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
+            {"name": "DM08_Mixed_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 100000, "data_path": MIXED_DATA_PATH},
         ]
 
         # ==========================================
         # Diff-SAC 针对 Racetrack 环境的初始探索矩阵
-        # 核心目的：验证纯粹的 R055 稳健底座（15.6m/s），能否通过 Q 引导打破自身的物理天花板
         # ==========================================
         racetrack_experiment_configs = [
-            # === 第一期：单专家消融 (已完成) ===
+            # === 第一期：单专家 (已完成) ===
             #{"name": "DR01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
             #{"name": "DR02_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
             #{"name": "DR03_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
             #{"name": "DR04_Strong_Q", "bc_epochs": 50, "q_weight": 1.0, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
 
-            # === 第二期：混合专家突围 (Mixed Experts) ===
+            # === 第二期：混合专家 (已完成) ===
             #{"name": "DR05_Mixed_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
             #{"name": "DR06_Mixed_Micro_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
-            {"name": "DR07_Mixed_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
-            {"name": "DR08_Mixed_Strong_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
+            #{"name": "DR07_Mixed_Standard_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
+            #{"name": "DR08_Mixed_Strong_Q", "bc_epochs": 50, "q_weight": 0.1, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},
         ]
         # 动态判定：根据终端输入，无缝切换任务队列
         if TARGET_ENV == "merge-v0": active_configs = merge_experiment_configs
         elif TARGET_ENV == "racetrack-v0": active_configs = racetrack_experiment_configs
-        else: active_configs = experiment_configs
+        else: active_configs = highway_experiment_configs
 
         exp_index = 0
         total_exps = len(active_configs)

@@ -435,93 +435,138 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     _save_and_close_fig('04_mean_speed_bar')
 
     # ----------------------------------------------------
-    # [准备子图布局] 动态计算模型数量，建立 1 行 N 列的画布
+    # [准备子图布局] 动态计算最优网格排列 (如 1x3, 2x2, 2x3, 2x4)
     # ----------------------------------------------------
     n_models = len(model_ids)
-    subplot_width = 5.0 # 每个子图固定 5 英寸宽
-    
-    # ----------------------------------------------------
-    # 🆕 图 5：动作分布 - 极小散点双子图 (Scatter Side-by-Side)
-    # ----------------------------------------------------
-    fig, axes = plt.subplots(1, n_models, figsize=(subplot_width * n_models, 5.0), sharex=True, sharey=True)
-    if n_models == 1: axes = [axes]
-    
-    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
-        ax = axes[i]
-        actions = all_results[mid].get('actions', np.array([]))
-        if len(actions) > 0:
-            actions = actions.reshape(actions.shape[0], -1)
-            if actions.shape[1] >= 2:
-                # 策略：极小 Size + 极低 Alpha
-                ax.scatter(actions[:, 1], actions[:, 0], color=color, alpha=0.2, s=10, edgecolors='none')
-                
-        ax.set_title(label, color=color, fontweight='bold')
-        ax.set_xlabel('横向控制 / 转向')
-        if i == 0: ax.set_ylabel('纵向控制 / 加减速')
-        ax.set_xlim(-1.05, 1.05)
-        ax.set_ylim(-1.05, 1.05)
-        ax.grid(True, linestyle='--', alpha=0.5)
+    if n_models <= 3:
+        nrows, ncols = 1, max(1, n_models)
+    elif n_models == 4:
+        nrows, ncols = 2, 2
+    elif n_models in [5, 6]:
+        nrows, ncols = 2, 3
+    else:
+        ncols = 4
+        nrows = int(np.ceil(n_models / ncols))
         
-    _save_and_close_fig('05_action_scatter_1xN')
-
-    # ----------------------------------------------------
-    # 🆕 图 6：动作分布 - 核密度分布双子图 (KDE Side-by-Side)
-    # ----------------------------------------------------
-    fig, axes = plt.subplots(1, n_models, figsize=(subplot_width * n_models, 5.0), sharex=True, sharey=True)
-    if n_models == 1: axes = [axes]
+    subplot_width = 4.0
+    subplot_height = 4.0
     
-    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
-        ax = axes[i]
-        actions = all_results[mid].get('actions', np.array([]))
-        if len(actions) > 0:
-            actions = actions.reshape(actions.shape[0], -1)
-            if actions.shape[1] >= 2:
-                x_plot, y_plot = actions[:, 1], actions[:, 0]
-                # 防止数万点导致 KDE 渲染卡死，限流下采样
-                if len(x_plot) > 10000:
-                    idx = np.random.choice(len(x_plot), 10000, replace=False)
-                    x_plot, y_plot = x_plot[idx], y_plot[idx]
+    # ----------------------------------------------------
+    # 🆕 图 5：动作分布 - 极小散点网格图 (Scatter Grid)
+    # ----------------------------------------------------
+    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
+    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
+    
+    for i in range(nrows * ncols):
+        ax = axes_flat[i]
+        if i < n_models:
+            mid = model_ids[i]
+            color = colors[i]
+            label = display_labels[i]
+            
+            actions = all_results[mid].get('actions', np.array([]))
+            if len(actions) > 0:
+                actions = actions.reshape(actions.shape[0], -1)
+                if actions.shape[1] >= 2:
+                    # 策略：极小 Size + 极低 Alpha
+                    ax.scatter(actions[:, 1], actions[:, 0], color=color, alpha=0.2, s=10, edgecolors='none')
                     
-                try:
-                    # fill=True: 绘制如热力图般渐变的实心分布区域；thresh=0.05: 隐藏边缘极低密度的孤点
-                    sns.kdeplot(x=x_plot + np.random.normal(0, 1e-5, size=x_plot.shape), 
-                                y=y_plot + np.random.normal(0, 1e-5, size=y_plot.shape), 
-                                color=color, fill=True, alpha=0.8, thresh=0.05, levels=10, ax=ax)
-                except Exception:
-                    pass
+            ax.set_title(label, color=color, fontweight='bold')
+            if i % ncols == 0:
+                ax.set_ylabel('纵向控制 / 加减速')
+            # 处于最底层，或者正下方是空位的图表，强制显示 X 轴标签和刻度
+            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
+                ax.set_xlabel('横向控制 / 转向')
+                ax.xaxis.set_tick_params(labelbottom=True)
                 
-        ax.set_title(label, color=color, fontweight='bold')
-        ax.set_xlabel('横向控制 / 转向')
-        if i == 0: ax.set_ylabel('纵向控制 / 加减速')
-        ax.set_xlim(-1.05, 1.05)
-        ax.set_ylim(-1.05, 1.05)
-        ax.grid(True, linestyle='--', alpha=0.5)
-        
-    _save_and_close_fig('06_action_kde_1xN')
+            ax.set_xlim(-1.05, 1.05)
+            ax.set_ylim(-1.05, 1.05)
+            ax.grid(True, linestyle='--', alpha=0.5)
+        else:
+            ax.axis('off')
+            
+    _save_and_close_fig('05_action_scatter_grid')
 
     # ----------------------------------------------------
-    # 🆕 图 7：动作分布 - 六边形分箱双子图 (Hexbin Side-by-Side)
+    # 🆕 图 6：动作分布 - 核密度分布网格图 (KDE Grid)
     # ----------------------------------------------------
-    fig, axes = plt.subplots(1, n_models, figsize=(subplot_width * n_models, 5.0), sharex=True, sharey=True)
-    if n_models == 1: axes = [axes]
+    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
+    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
     
-    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
-        ax = axes[i]
-        actions = all_results[mid].get('actions', np.array([]))
-        if len(actions) > 0:
-            actions = actions.reshape(actions.shape[0], -1)
-            if actions.shape[1] >= 2:
-                # gridsize 控制蜂窝细度，mincnt=1 去除空白区域，cmap 选用美观的深海/火箭色系
-                ax.hexbin(actions[:, 1], actions[:, 0], gridsize=30, cmap='mako_r', mincnt=1, alpha=0.9)
+    for i in range(nrows * ncols):
+        ax = axes_flat[i]
+        if i < n_models:
+            mid = model_ids[i]
+            color = colors[i]
+            label = display_labels[i]
+            
+            actions = all_results[mid].get('actions', np.array([]))
+            if len(actions) > 0:
+                actions = actions.reshape(actions.shape[0], -1)
+                if actions.shape[1] >= 2:
+                    x_plot, y_plot = actions[:, 1], actions[:, 0]
+                    # 防止数万点导致 KDE 渲染卡死，限流下采样
+                    if len(x_plot) > 10000:
+                        idx = np.random.choice(len(x_plot), 10000, replace=False)
+                        x_plot, y_plot = x_plot[idx], y_plot[idx]
+                        
+                    try:
+                        # fill=True: 绘制如热力图般渐变的实心分布区域；thresh=0.05: 隐藏边缘极低密度的孤点
+                        sns.kdeplot(x=x_plot + np.random.normal(0, 1e-5, size=x_plot.shape), 
+                                    y=y_plot + np.random.normal(0, 1e-5, size=y_plot.shape), 
+                                    color=color, fill=True, alpha=0.8, thresh=0.05, levels=10, ax=ax)
+                    except Exception:
+                        pass
+                    
+            ax.set_title(label, color=color, fontweight='bold')
+            if i % ncols == 0:
+                ax.set_ylabel('纵向控制 / 加减速')
+            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
+                ax.set_xlabel('横向控制 / 转向')
+                ax.xaxis.set_tick_params(labelbottom=True)
                 
-        ax.set_title(label, color=color, fontweight='bold')
-        ax.set_xlabel('横向控制 / 转向')
-        if i == 0: ax.set_ylabel('纵向控制 / 加减速')
-        ax.set_xlim(-1.05, 1.05)
-        ax.set_ylim(-1.05, 1.05)
-        ax.grid(True, linestyle='--', alpha=0.5)
-        
-    _save_and_close_fig('07_action_hexbin_1xN')
+            ax.set_xlim(-1.05, 1.05)
+            ax.set_ylim(-1.05, 1.05)
+            ax.grid(True, linestyle='--', alpha=0.5)
+        else:
+            ax.axis('off')
+            
+    _save_and_close_fig('06_action_kde_grid')
+
+    # ----------------------------------------------------
+    # 图 7：动作分布 - 六边形分箱网格图 (Hexbin Grid)
+    # ----------------------------------------------------
+    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
+    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
+    
+    for i in range(nrows * ncols):
+        ax = axes_flat[i]
+        if i < n_models:
+            mid = model_ids[i]
+            color = colors[i]
+            label = display_labels[i]
+            
+            actions = all_results[mid].get('actions', np.array([]))
+            if len(actions) > 0:
+                actions = actions.reshape(actions.shape[0], -1)
+                if actions.shape[1] >= 2:
+                    # gridsize 控制蜂窝细度，mincnt=1 去除空白区域，cmap 选用美观的深海/火箭色系
+                    ax.hexbin(actions[:, 1], actions[:, 0], gridsize=30, cmap='mako_r', mincnt=1, alpha=0.9)
+                    
+            ax.set_title(label, color=color, fontweight='bold')
+            if i % ncols == 0:
+                ax.set_ylabel('纵向控制 / 加减速')
+            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
+                ax.set_xlabel('横向控制 / 转向')
+                ax.xaxis.set_tick_params(labelbottom=True)
+                
+            ax.set_xlim(-1.05, 1.05)
+            ax.set_ylim(-1.05, 1.05)
+            ax.grid(True, linestyle='--', alpha=0.5)
+        else:
+            ax.axis('off')
+            
+    _save_and_close_fig('07_action_hexbin_grid')
 
     print(f"📈 7 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
@@ -554,121 +599,62 @@ if __name__ == "__main__":
         # 评估 Diff-SAC 时，必须提供专家数据集路径以初始化归一化器 (Normalizer)
         EXPERT_DATA_PATH = "data/expert_data/merge-v0/dataset_base_20260422_014135/expert_transitions.npz"
         models_to_evaluate = {
-            # === 第一期基础实验（加入TTC） ===
-            "M1": {"path": "outputs/merge-v0/models/SAC_M1_Base_Merge_20260420_150323/sac_merge_final.pth", "display_name": "M1 基础生存"},
-            #"M2": {"path": "outputs/merge-v0/models/SAC_M2_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "display_name": "M2 高效平滑"},
-            #"M3": {"path": "outputs/merge-v0/models/SAC_M3_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M3 激进寻隙"},
-            #"M4": {"path": "outputs/merge-v0/models/SAC_M4_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M4 安全至上"},
-            #"M5": {"path": "outputs/merge-v0/models/SAC_M5_Patient_Merger_20260420_220108/sac_merge_final.pth", "display_name": "M5 耐心等待"},
-            #"M6": {"path": "outputs/merge-v0/models/SAC_M6_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "display_name": "M6 极限死刑"},
-            #"M7": {"path": "outputs/merge-v0/models/SAC_M7_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "display_name": "M7 平滑马拉松"},
-            #"M8": {"path": "outputs/merge-v0/models/SAC_M8_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M8 终极汇入"},
+            # === 第一期 SAC 消融矩阵 ===
+            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "display_name": "M01 基础生存"},
+            "M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "display_name": "M02 高效平滑"},
+            "M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M03 激进寻隙"},
+            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M04 安全至上"},
+            "M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "display_name": "M05 耐心等待"},
+            "M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "display_name": "M06 极限死刑"},
+            "M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "display_name": "M07 平滑马拉松"},
+            "M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M08 终极汇入"},
 
             # === 第一期 diff-SAC 实验 ===
-            #"DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_.../diff_sac_final.pth", "display_name": "DM01 纯 BC 克隆"},
-            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_.../diff_sac_final.pth", "display_name": "DM02 微引导"},
-            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_.../diff_sac_final.pth", "display_name": "DM03 标准引导"},
-            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_.../diff_sac_final.pth", "display_name": "DM04 强力干预"},
+            #"DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "display_name": "DM01 纯 BC 克隆"},
+            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "display_name": "DM02 微引导"},
+            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "display_name": "DM03 标准引导"},
+            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "display_name": "DM04 强力干预"},
 
-            # === 第三期 diff-SAC 实验 (基于 100% M4 专家数据) ===
-            #"DM9": {"path": "outputs/merge-v0/models/DiffSAC_DM9_M4_Prior_Only_20260423_184425/online_finetune/diff_sac_ep400.pth", "display_name": "DM9 M4纯模仿"},
-            #"DM10": {"path": "outputs/merge-v0/models/DiffSAC_DM10_M4_Standard_Q_20260423_190251/online_finetune/diff_sac_ep400.pth", "display_name": "DM10 M4弱度干预"},
-            #"DM11": {"path": "outputs/merge-v0/models/DiffSAC_DM11_M4_Strong_Q_20260423_191253/online_finetune/diff_sac_ep400.pth", "display_name": "DM11 M4强力干预"},
-            #"DM12": {"path": "outputs/merge-v0/models/DiffSAC_DM12_M4_Extreme_Q_20260423_192105/online_finetune/diff_sac_ep400.pth", "display_name": "DM12 M4极限干预"},
+            # === 第二期 diff-SAC 混合专家实验 ===
+
         }
     elif TARGET_ENV == "racetrack-v0":
         #EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R05_mode1_20260506_011817/expert_transitions.npz"
         EXPERT_DATA_PATH = "data/expert_data/racetrack-v0/dataset_mixed_0.8R05_0.2R01_20260506_142446/expert_transitions_mixed_0.8R05_0.2R01.npz"
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            #"R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
-            #"R011": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260504_201800/sac_racetrack_final.pth", "display_name": "R011 基础避障"},
-            #"R012": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260504_225330/sac_racetrack_final.pth", "display_name": "R012 基础双局"},
-            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260503_232841/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
-            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260504_014115/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
-            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260504_035840/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
-            #"R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260504_061123/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
-            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260504_082337/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
-            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260504_103444/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
-            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_124633/sac_racetrack_final.pth", "display_name": "R08 专家底座"},          
-            #"R081": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_222831/sac_racetrack_ep750.pth", "display_name": "R081 专家底座"},
-            #"R082": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_004728/sac_racetrack_final.pth", "display_name": "R082 专家底座"},
-            
-
-            #"R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260503_213335/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
-            #"R011": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "display_name": "R011 基础 SAC"},
-            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260503_232841/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
-            #"R022": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "display_name": "R022 速度优先"},
-            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260504_014115/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
-            #"R033": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "display_name": "R033 安全优先"},
-            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260504_035840/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
-            #"R044": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "display_name": "R044 极限漂移"},
-            #"R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260504_061123/sac_racetrack_final.pth", "display_name": "R05 平滑赛车线"},
-            #"R055": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R055 平滑赛车线"},
-            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260504_082337/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
-            #"R066": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "display_name": "R066 宽域动态"},
-            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260504_103444/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
-            #"R077": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "display_name": "R077 零容忍"},
-            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260504_124633/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
-            #"R088": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "display_name": "R088 专家底座"},
-            
-            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R05 单专家底座"},
-            
+            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
+            "R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
+            "R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
+            "R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
+            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R05 单专家"},
+            "R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
+            "R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
+            "R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
+                        
             # === 第一期 diff-SAC 实验 ===
-            "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260506_013340/online_finetune/diff_sac_ep400.pth", "display_name": "DR01 纯 BC 克隆"},
-            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260506_021118/online_finetune/diff_sac_ep400.pth", "display_name": "DR02 微引导"},
-            #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260506_025209/online_finetune/diff_sac_ep400.pth", "display_name": "DR03 标准引导"},
-            #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260506_032647/online_finetune/diff_sac_ep400.pth", "display_name": "DR04 强力干预"},
+            "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "display_name": "DR01 纯 BC 克隆"},
+            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "display_name": "DR02 微引导"},
+            "DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260510_092222/online_finetune/diff_sac_final.pth", "display_name": "DR03 标准引导"},
+            "DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260510_123826/online_finetune/diff_sac_final.pth", "display_name": "DR04 强力干预"},
 
             # === 第二期 Diff-SAC 混合专家实验 ===
-            #"DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260506_144146/online_finetune/diff_sac_ep400.pth", "display_name": "DR05 混合纯BC"},
-            #"DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260506_150630/online_finetune/diff_sac_ep400.pth", "display_name": "DR06 混合微引导"},
-            #"DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944/online_finetune/diff_sac_ep400.pth", "display_name": "DR07 混合标引导"},
-            #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916/online_finetune/diff_sac_ep400.pth", "display_name": "DR08 混合强干预"},
+            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260510_155536/online_finetune/diff_sac_final.pth", "display_name": "DR05 混合纯BC"},
+            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "display_name": "DR06 混合微引导"},
+            "DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "display_name": "DR07 混合标引导"},
+            "DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "display_name": "DR08 混合强干预"},
         }
     else: # highway-v0
         EXPERT_DATA_PATH = "data/expert_data/highway-v0/dataset_smart_mixed_90_10_20260413_031136/expert_transitions_smart_90_10.npz"
         models_to_evaluate = {
-            #"H1": {"path": "outputs/models/SAC_H1_20260329_150543/sac_highway_final.pth", "display_name": "H1 无约束 SAC"},
-            #"H2": {"path": "outputs/models/SAC_H2_20260329_185751/sac_highway_final.pth", "display_name": "H2 越野飙车 SAC"},
-            #"H3": {"path": "outputs/models/SAC_H3_20260330_010914/sac_highway_final.pth", "display_name": "H3 LQR 欠拟合 SAC"},
-            "H5": {"path": "outputs/highway-v0/models/SAC_H5_20260330_135449/sac_highway_final.pth", "display_name": "H5 安全保守 SAC"},
-            #"H6": {"path": "outputs/models/SAC_H6_20260330_213300/sac_highway_final.pth", "display_name": "H6 高效超车 SAC"},
+            # === 第一期 SAC 消融矩阵 ===
+            "H01": {"path": "outputs/highway-v0/models/SAC_H01_Base_Highway_20260511_225245/sac_highway_final.pth", "display_name": "H01 基础高速"},
+            "H02": {"path": "outputs/highway-v0/models/SAC_H02_Safety_Priority_20260512_040012/sac_highway_final.pth", "display_name": "H02 安全优先"},
+            "H03": {"path": "outputs/highway-v0/models/SAC_H03_Speed_Priority_20260512_100655/sac_highway_final.pth", "display_name": "H03 速度优先"},
+            "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "display_name": "H04 拥堵路况"},
 
-            "DH1": {"path": "outputs/highway-v0/models/DiffSAC_DH1_20260405_031920/DiffSAC_20260405_031920/diff_sac_ep400.pth", "display_name": "DH1 微弱 Q 引导"},
-            #"DH2": {"path": "outputs/models/DiffSAC_DH2_20260405_065603/diff_sac_ep400.pth", "display_name": "DH2 标准 Q 引导"},
-            #"DH3": {"path": "outputs/models/DiffSAC_DH3_20260405_101704/diff_sac_ep400.pth", "display_name": "DH3 强力 Q 引导"},
-            #"DH4": {"path": "outputs/models/DiffSAC_DH4_20260405_141352/diff_sac_ep500.pth", "display_name": "DH4 降学习率长跑"},
+            # === 第一期 diff-SAC 实验 ===
 
-            #"DH5": {"path": "outputs/models/DiffSAC_DH5_20260406_023023/diff_sac_ep400.pth", "display_name": "DH5 极微引导"},
-            #"DH6": {"path": "outputs/models/DiffSAC_DH6_20260406_040052/diff_sac_ep400.pth", "display_name": "DH6 铁壁底座"},
-            #"DH7": {"path": "outputs/models/DiffSAC_DH7_20260406_052938/diff_sac_ep500.pth", "display_name": "DH7 冰封微调"},
-            #"DH8": {"path": "outputs/models/DiffSAC_DH8_20260406_064236/diff_sac_ep400.pth", "display_name": "DH8 零引导对照"},
-
-            #"DH9": {"path": "outputs/models/DiffSAC_DH9_20260406_153903/diff_sac_ep500.pth", "display_name": "DH9 终极防御底座"},
-            #"DH10": {"path": "outputs/models/DiffSAC_DH10_20260406_172128/diff_sac_ep500.pth", "display_name": "DH10 加速冰封"},
-            #"DH11": {"path": "outputs/models/DiffSAC_DH11_20260406_211102/diff_sac_ep400.pth", "display_name": "DH11 极限微丝引导"},
-            #"DH12": {"path": "outputs/models/DiffSAC_DH12_20260407_013017/diff_sac_ep800.pth", "display_name": "DH12 冰封马拉松"},
-
-            #"DH13": {"path": "outputs/models/DiffSAC_DH13_20260407_071544/diff_sac_ep400.pth", "display_name": "DH13 终极无坚不摧"},
-            #"DH14": {"path": "outputs/models/DiffSAC_DH14_20260407_110205/diff_sac_ep400.pth", "display_name": "DH14 厚甲利刃"},
-            #"DH15": {"path": "outputs/models/DiffSAC_DH15_20260407_140041/diff_sac_ep400.pth", "display_name": "DH15 深度 BC 对照"},
-            #"DH16": {"path": "outputs/models/DiffSAC_DH16_20260407_170756/diff_sac_ep600.pth", "display_name": "DH16 微丝引导马拉松"},
-
-            #"DH17": {"path": "outputs/models/DiffSAC_DH17_20260408_141756/diff_sac_ep400.pth", "display_name": "DH17 混合 BC 对照"},
-            #"DH18": {"path": "outputs/models/DiffSAC_DH18_20260408_155039/diff_sac_ep400.pth", "display_name": "DH18 混合微丝引导"},
-            #"DH19": {"path": "outputs/models/DiffSAC_DH19_20260408_190001/diff_sac_ep400.pth", "display_name": "DH19 混合厚底座"},
-            #"DH20": {"path": "outputs/models/DiffSAC_DH20_20260408_224554/diff_sac_ep600.pth", "display_name": "DH20 混合马拉松"},
-
-            #"DH21": {"path": "outputs/models/DiffSAC_DH21_20260410_031928/diff_sac_ep600.pth", "display_name": "DH21 黄金比例马拉松"},
-            #"DH22": {"path": "outputs/models/DiffSAC_DH22_20260413_031458/diff_sac_ep400.pth", "display_name": "DH22 智能 BC 对照"},
-            #"DH23": {"path": "outputs/models/DiffSAC_DH23_20260413_041749/diff_sac_ep400.pth", "display_name": "DH23 智能微丝引导"},
-            #"DH24": {"path": "outputs/models/DiffSAC_DH24_20260413_052105/diff_sac_ep400.pth", "display_name": "DH24 智能厚底座"},
-
-            #"DH25": {"path": "outputs/models/DiffSAC_DH25_20260413_062853/diff_sac_ep600.pth", "display_name": "DH25 智能混合马拉松"},
-
-            #"DH8_Run2": {"path": "outputs/models/DiffSAC_DH8_Run2_20260406_080556/diff_sac_ep500.pth", "display_name": "DH8_Run2 零引导对照"},
-            #"DH8_Run3": {"path": "outputs/models/DiffSAC_DH8_Run3_20260406_095201/diff_sac_ep500.pth", "display_name": "DH8_Run3 零引导对照"},
         }
 
 

@@ -375,33 +375,34 @@ if __name__ == "__main__":
 
     # 🚨 环境资源配置清单 🚨
     if target_env == "merge-v0":
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M4_Safety_First_20260420_170911", "sac_merge_final.pth")
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M04_Safety_First_20260420_170911", "sac_merge_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
-        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M3_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "merge-v0", "models", "SAC_M03_Aggressive_Gap_Finding_20260420_162217", "sac_merge_final.pth")
         AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [20, 30]}
         # 离线混合依赖的已有数据集路径
-        SAFE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "YOUR_SAFE_DATASET_HERE", "expert_transitions.npz")
-        AGGRESSIVE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "YOUR_AGG_DATASET_HERE", "expert_transitions.npz")
+        SAFE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_M04_mode1_20260423_154904", "expert_transitions.npz")
+        AGGRESSIVE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "merge-v0", "dataset_M03_mode2_20260513_161639", "expert_transitions.npz")
 
     elif target_env == "racetrack-v0":
         SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R05_SAC_Smooth_Racing_20260505_131614", "sac_racetrack_final.pth")
         SAFE_ENV_CONFIG = {"reward_speed_range": [15, 25]}
         AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "racetrack-v0", "models", "SAC_R01_SAC_Baseline_20260505_033212", "sac_racetrack_final.pth")
         AGGRESSIVE_ENV_CONFIG = {"reward_speed_range": [15, 30]} 
-        # 离线混合依赖的已有数据集路径 (需替换为您真实采出的文件夹名)
+        # 离线混合依赖的已有数据集路径
         SAFE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R05_mode1_20260506_011817", "expert_transitions.npz")
         AGGRESSIVE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "racetrack-v0", "dataset_R01_mode2_20260506_141859", "expert_transitions.npz")
 
-    else:
-        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_135449", "sac_highway_final.pth")
-        SAFE_ENV_CONFIG = None
-        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_20260330_213300", "sac_highway_final.pth")
-        AGGRESSIVE_ENV_CONFIG = None
-        SAFE_DATA_PATH = ""
-        AGGRESSIVE_DATA_PATH = ""
+    else:  #highway
+        SAFE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_H02_Safety_Priority_20260512_040012", "sac_highway_final.pth")
+        SAFE_ENV_CONFIG = {"vehicles_count": 25, "collision_reward": -5.0, "high_speed_reward": 0.2, "reward_speed_range": [15, 25]}
+        AGGRESSIVE_MODEL_PATH = os.path.join(PROJECT_ROOT, "outputs", "highway-v0", "models", "SAC_H01_Base_Highway_20260511_225245", "sac_highway_final.pth")
+        AGGRESSIVE_ENV_CONFIG = {"vehicles_count": 25, "collision_reward": -1.0, "high_speed_reward": 0.4, "reward_speed_range": [20, 30]}
+        # 离线混合依赖的已有数据集路径
+        SAFE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "highway-v0", "dataset_H02_mode1_20260513_161932", "expert_transitions.npz")
+        AGGRESSIVE_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "expert_data", "highway-v0", "dataset_H01_mode2_20260513_203852", "expert_transitions.npz")
 
     timestamp_now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    TARGET_STEPS = 20000 if target_env == "merge-v0" else 50000
+    TARGET_STEPS = 50000  # 统一采用 50000 步，为 Diffusion 积累更深厚的专家经验库
 
     # --- 路由执行逻辑 ---
     if choice in ['1', '2']:

@@ -16,6 +16,8 @@ old_scripts/aban_outputs/*/logs/*
 old_scripts/aban_outputs/*/models/*
 old_scripts/aban_outputs/*/videos/*
 old_scripts/aban_outputs/*/eval_results/*
+old_scripts/aban_outputs/*/train_results/*
+old_scripts/aban_outputs/*/expert_data/*
 old_scripts/output_plot/*
 
 # ==========================================

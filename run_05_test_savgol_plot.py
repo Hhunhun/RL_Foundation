@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 from scipy.signal import savgol_filter  # 引入 Savitzky-Golay 平滑函数
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -159,6 +159,10 @@ def plot_savgol_curves(models_dict, save_dir, tags_to_plot, align_to_env_steps=F
                 display_max = int(global_max_step)
                 
             ax.set_xlim(0, display_max)
+            
+            # 限制横纵坐标刻度标签数量不超过6个 (nbins=5 生成最多6个刻度)
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
             
             # --- 智能 X 轴动态格式化 ---
             if global_max_step >= 10000:

@@ -14,7 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -271,10 +271,9 @@ def plot_training_curves(models_dict, save_dir, tags_to_plot, smooth_weight=0.85
                 
             ax.set_xlim(0, display_max)
             
-            xticks = ax.get_xticks()
-            valid_xticks = [x for x in xticks if x < display_max - (display_max * 0.05) and x >= 0]
-            valid_xticks.append(display_max)
-            ax.set_xticks(valid_xticks)
+            # 限制横纵坐标刻度标签数量不超过6个 (nbins=5 生成最多6个刻度)
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
             
             # --- 智能 X 轴动态格式化 ---
             if align_to_env_steps:
