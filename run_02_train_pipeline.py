@@ -282,11 +282,11 @@ if __name__ == "__main__":
         # Diff-SAC 针对 Highway 环境的初始探索矩阵
         # ==========================================
         highway_experiment_configs = [
-            # === 第一期：单专家消融 (未完成) ===
-            {"name": "DH01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
-            {"name": "DH02_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
-            {"name": "DH03_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
-            {"name": "DH04_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            # === 第一期：单专家消融 (已完成) ===
+            #{"name": "DH01_Pure_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DH02_Micro_Q", "bc_epochs": 50, "q_weight": 0.005, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DH03_Standard_Q", "bc_epochs": 50, "q_weight": 0.01, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
+            #{"name": "DH04_Strong_Q", "bc_epochs": 50, "q_weight": 0.05, "lr": 3e-4, "max_steps": 200000, "data_path": SINGLE_DATA_PATH},
 
             # === 第二期：混合专家突围 (未完成) ===
             {"name": "DH05_Mixed_BC", "bc_epochs": 50, "q_weight": 0.0, "lr": 3e-4, "max_steps": 200000, "data_path": MIXED_DATA_PATH},

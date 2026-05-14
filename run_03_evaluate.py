@@ -857,26 +857,26 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "display_name": "M01 基础生存"},
-            #"M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "display_name": "M02 高效平滑"},
-            "M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "display_name": "M03 激进寻隙"},
-            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "display_name": "M04 安全至上"},
-            #"M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "display_name": "M05 耐心等待"},
-            #"M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "display_name": "M06 极限死刑"},
-            #"M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "display_name": "M07 平滑马拉松"},
-            #"M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "display_name": "M08 终极汇入"},
+            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC基线模型 (Baseline)"},
+            #"M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "raw_name": "M02 高效平滑", "acad_name": "SAC高效平滑 (Smooth)"},
+            "M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC激进策略 (Aggressive)"},
+            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC安全策略 (Safety)"},
+            #"M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC耐心等待 (Patient)"},
+            #"M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "raw_name": "M06 极限死刑", "acad_name": "SAC极限惩罚 (Penalty)"},
+            #"M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "raw_name": "M07 平滑马拉松", "acad_name": "SAC平滑马拉松 (Marathon)"},
+            #"M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "raw_name": "M08 终极汇入", "acad_name": "SAC终极汇入 (Ultimate)"},
 
             # === 第一期 diff-SAC 实验 ===
-            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "display_name": "DM01 纯 BC 克隆", "data_path": SINGLE_DATA_PATH},
-            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "display_name": "DM02 微引导", "data_path": SINGLE_DATA_PATH},
-            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "display_name": "DM03 标准引导", "data_path": SINGLE_DATA_PATH},
-            "DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "display_name": "DM04 强力干预", "data_path": SINGLE_DATA_PATH},
+            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
+            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "raw_name": "DM02 微引导", "acad_name": "Diff-SAC (微Q值引导)", "data_path": SINGLE_DATA_PATH},
+            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "raw_name": "DM03 标准引导", "acad_name": "Diff-SAC (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
+            "DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 diff-SAC 混合专家实验 ===
-            "DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "display_name": "DM05 混合纯BC", "data_path": MIXED_DATA_PATH},
-            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "display_name": "DM06 混合微引导", "data_path": MIXED_DATA_PATH},
-            #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "display_name": "DM07 混合标引导", "data_path": MIXED_DATA_PATH},
-            "DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "display_name": "DM08 混合强干预", "data_path": MIXED_DATA_PATH},
+            "DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
+            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
+            #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
 
         }
     elif TARGET_ENV == "racetrack-v0":
@@ -885,26 +885,26 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "display_name": "R01 基础 SAC"},
-            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "display_name": "R02 速度优先"},
-            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "display_name": "R03 安全优先"},
-            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "display_name": "R04 极限漂移"},
-            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "display_name": "R05 单专家"},
-            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "display_name": "R06 宽域动态"},
-            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "display_name": "R07 零容忍"},
-            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "display_name": "R08 专家底座"},
+            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "raw_name": "R01 基础 SAC", "acad_name": "SAC基线模型 (Baseline)"},
+            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "raw_name": "R02 速度优先", "acad_name": "SAC速度优先 (Speed)"},
+            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "raw_name": "R03 安全优先", "acad_name": "SAC安全优先 (Safety)"},
+            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "raw_name": "R04 极限漂移", "acad_name": "SAC极限漂移 (Drift)"},
+            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "raw_name": "R05 单专家", "acad_name": "SAC单专家策略 (Single-Expert)"},
+            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "raw_name": "R06 宽域动态", "acad_name": "SAC宽域动态 (Wide-Dynamic)"},
+            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "raw_name": "R07 零容忍", "acad_name": "SAC零容忍 (Zero-Tolerance)"},
+            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "raw_name": "R08 专家底座", "acad_name": "SAC专家底座 (Expert-Pro)"},
     
             # === 第一期 diff-SAC 实验 ===
-            "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "display_name": "DR01 纯 BC 克隆", "data_path": SINGLE_DATA_PATH},
-            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "display_name": "DR02 微引导", "data_path": SINGLE_DATA_PATH},
-            #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260510_092222/online_finetune/diff_sac_final.pth", "display_name": "DR03 标准引导", "data_path": SINGLE_DATA_PATH},
-            #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260510_123826/online_finetune/diff_sac_final.pth", "display_name": "DR04 强力干预", "data_path": SINGLE_DATA_PATH},
+            "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "raw_name": "DR01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
+            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "raw_name": "DR02 微引导", "acad_name": "Diff-SAC (弱Q值引导)", "data_path": SINGLE_DATA_PATH},
+            #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260510_092222/online_finetune/diff_sac_final.pth", "raw_name": "DR03 标准引导", "acad_name": "Diff-SAC (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
+            #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260510_123826/online_finetune/diff_sac_final.pth", "raw_name": "DR04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 Diff-SAC 混合专家实验 ===
-            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260510_155536/online_finetune/diff_sac_final.pth", "display_name": "DR05 混合纯BC", "data_path": MIXED_DATA_PATH},
-            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "display_name": "DR06 混合微引导", "data_path": MIXED_DATA_PATH},
-            "DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "display_name": "DR07 混合标引导", "data_path": MIXED_DATA_PATH},
-            "DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "display_name": "DR08 混合强干预", "data_path": MIXED_DATA_PATH},
+            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260510_155536/online_finetune/diff_sac_final.pth", "raw_name": "DR05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
+            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "raw_name": "DR06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "raw_name": "DR07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
         }
     else: # highway-v0
         SINGLE_DATA_PATH = "data/expert_data/highway-v0/dataset_H02_mode1_20260513_161932/expert_transitions.npz"
@@ -912,13 +912,13 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "H01": {"path": "outputs/highway-v0/models/SAC_H01_Base_Highway_20260511_225245/sac_highway_final.pth", "display_name": "H01 基础高速"},
-            "H02": {"path": "outputs/highway-v0/models/SAC_H02_Safety_Priority_20260512_040012/sac_highway_final.pth", "display_name": "H02 安全优先"},
-            "H03": {"path": "outputs/highway-v0/models/SAC_H03_Speed_Priority_20260512_100655/sac_highway_final.pth", "display_name": "H03 速度优先"},
-            "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "display_name": "H04 拥堵路况"},
+            "H01": {"path": "outputs/highway-v0/models/SAC_H01_Base_Highway_20260511_225245/sac_highway_final.pth", "raw_name": "H01 基础高速", "acad_name": "SAC基线模型 (Baseline)"},
+            "H02": {"path": "outputs/highway-v0/models/SAC_H02_Safety_Priority_20260512_040012/sac_highway_final.pth", "raw_name": "H02 安全优先", "acad_name": "SAC安全优先 (Safety)"},
+            "H03": {"path": "outputs/highway-v0/models/SAC_H03_Speed_Priority_20260512_100655/sac_highway_final.pth", "raw_name": "H03 速度优先", "acad_name": "SAC速度优先 (Speed)"},
+            "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "raw_name": "H04 拥堵路况", "acad_name": "SAC拥堵策略 (Traffic-Jam)"},
 
             # === 第一期 diff-SAC 实验 ===
-            # "DH01": {"path": "...", "display_name": "...", "data_path": SINGLE_DATA_PATH},
+            # "DH01": {"path": "...", "raw_name": "DH01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
         }
 
     # ==========================================
@@ -927,6 +927,15 @@ if __name__ == "__main__":
     PLOT_ONLY = True
     # 如果 PLOT_ONLY = True，请填入之前跑出来的 all_results.pkl 绝对或相对路径
     LOAD_PKL_PATH = "outputs/racetrack-v0/eval_results/[R01_R05_DR01_DR02_DR05_DR06_DR07_DR08]_20260515_022757/data/all_results.pkl"
+
+    # 🌟 图表标签与出图目录切换开关
+    # True: 使用学术中文规范标签 (出图到 plots_academic_cn 目录)
+    # False: 使用原始工程调试标签 (出图到 plots_raw_tags 目录)
+    USE_ACADEMIC_LABELS = False
+
+    # 动态应用所选名称
+    for k, v in models_to_evaluate.items():
+        v["display_name"] = v["acad_name"] if USE_ACADEMIC_LABELS else v["raw_name"]
 
     if not PLOT_ONLY:
         # 大样本测试局数，100 局是黄金免检样本量
@@ -939,7 +948,8 @@ if __name__ == "__main__":
         eval_run_name = f"[{versions_str}]_{timestamp}"
 
         eval_run_dir = os.path.join("outputs", TARGET_ENV, "eval_results", eval_run_name)
-        plot_save_dir = os.path.join(eval_run_dir, "plots")
+        plot_dir_name = "plots_academic_cn" if USE_ACADEMIC_LABELS else "plots_raw_tags"
+        plot_save_dir = os.path.join(eval_run_dir, plot_dir_name)
         data_save_dir = os.path.join(eval_run_dir, "data")
 
         # 启动批量测评
@@ -978,9 +988,10 @@ if __name__ == "__main__":
             with open(LOAD_PKL_PATH, 'rb') as f:
                 all_results = pickle.load(f)
             
-            # 复用读取路径所在的目录作为新的出图目录，新建一个 plots_redrawn 防止覆盖原生图表
+            # 根据开关选择不同的出图子目录，防止互相覆盖
             base_dir = os.path.dirname(os.path.dirname(LOAD_PKL_PATH))
-            plot_save_dir = os.path.join(base_dir, "plots_redrawn")
+            plot_dir_name = "plots_academic_cn" if USE_ACADEMIC_LABELS else "plots_raw_tags"
+            plot_save_dir = os.path.join(base_dir, plot_dir_name)
             data_save_dir = os.path.join(base_dir, "data")
             os.makedirs(plot_save_dir, exist_ok=True)
             
