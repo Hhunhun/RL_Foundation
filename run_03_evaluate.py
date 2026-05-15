@@ -554,6 +554,196 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     
     _save_and_close_fig('02d_action_jerk_std_bar')
 
+    # ====================================================
+    # 🌟 [高级可视化方案] 针对论文的高信息密度图表 05 ~ 07 (原 08 ~ 10)
+    # ==========================================
+
+    # ----------------------------------------------------
+    # 🆕 图 05：累计奖励雨云图 (Raincloud Plot) 
+    # 结合了散点、箱线和半小提琴图，是展示核密度与真实数据分布的终极形态
+    # ----------------------------------------------------
+    # 🎨 [视觉精修配置区] 独立解耦四大元素的视觉参数，随心所欲定制您的完美图表
+    CLOUD_STYLE     = {'alpha': 0.40, 'linewidth': 1.0}                     # 云朵(KDE): 追求轻盈、通透、边界柔和
+    RAIN_STYLE      = {'alpha': 0.35, 'size': 3.0, 'jitter': 0.2}          # 雨滴(散点): 追求粒粒分明、错落有致
+    
+    # 🛠️ [箱线图(伞)参数调节区] 
+    UMBRELLA_STYLE  = {
+        'alpha': 0.80,       # 箱体填充的透明度 (0.0 完全透明 ~ 1.0 完全不透明)
+        'linewidth': 1.5,    # 箱线图边框、中位数线、上下四分位须线的粗细
+        'width': 0.3,       # 箱线图的整体高度/胖瘦 (太大会挡住雨滴，太小看不清)
+        'edgecolor': 'black' # 边框和线条的颜色
+    }
+    LIGHTNING_STYLE = {'alpha': 1.00, 'size': 60, 'linewidth': 1.2, 'y_offset': 0.15, 'color': 'gold', 'edgecolor': 'black'} # 闪电(均值): 视觉焦点，绝对清晰
+    
+    # 🛠️ [坐标轴与外框调节区]
+    AXES_STYLE      = {
+        'title_pad': 15, 'grid_alpha': 0.4, 'spine_width': 1.2, 'spine_color': 'black',
+        'x_range': (30, 60)      # [横坐标范围调节]: 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
+    }
+    
+    plt.figure(figsize=(12.0, 8.0)) 
+    
+    import ptitprince as pt
+    import pandas as pd
+    import matplotlib.collections as mcoll
+    
+    # 1. 数据清洗与挂载
+    flat_rewards, flat_labels = [], []
+    for mid, label in zip(model_ids, display_labels):
+        rewards = all_results[mid]['raw_rewards']
+        flat_rewards.extend(rewards)
+        flat_labels.extend([label] * len(rewards))
+        
+    df_rain = pd.DataFrame({'Reward': flat_rewards, 'Algorithm': flat_labels})
+    df_rain = df_rain.dropna(subset=['Reward'])
+    df_rain['Reward'] = df_rain['Reward'].astype(float)
+    
+    # 2. 调用引擎铺设底图 (利用 ptitprince 处理复杂的几何偏移，忽略其全局样式)
+    pt.RainCloud(x='Algorithm', y='Reward', hue='Algorithm', data=df_rain, 
+                 palette=colors, orient='h', ax=plt.gca(),
+                 order=display_labels,         # 【核心修复】强制锁定渲染顺序，保障与后续均值对齐
+                 point_size=RAIN_STYLE['size'], 
+                 width_viol=0.6, width_box=UMBRELLA_STYLE['width'],
+                 bw=0.2, dodge=False, pointplot=False, move=0.2,
+                 jitter=RAIN_STYLE['jitter'], cut=2) 
+                 
+    ax = plt.gca()
+    if ax.legend_ is not None:
+        ax.legend_.remove()
+        
+    # 3. 🎯 核心黑科技：底层多态对象劫持 (Deep Object Takeover)
+    # 分别识别并重塑云、雨、伞的独有属性，打破同质化
+    for collection in ax.collections:
+        if isinstance(collection, mcoll.PolyCollection):
+            # [定制云朵] 核密度多边形
+            collection.set_alpha(CLOUD_STYLE['alpha'])
+            collection.set_linewidth(CLOUD_STYLE['linewidth'])
+        elif isinstance(collection, mcoll.PathCollection):
+            # [定制雨滴] 散点集合
+            collection.set_alpha(RAIN_STYLE['alpha'])
+            
+    for patch in ax.patches:
+        # [定制伞面] 四分位距箱体
+        patch.set_edgecolor(UMBRELLA_STYLE['edgecolor'])
+        patch.set_linewidth(UMBRELLA_STYLE['linewidth'])
+        patch.set_alpha(UMBRELLA_STYLE['alpha'])
+        patch.set_zorder(5)
+        
+    for line in ax.lines:
+        # [隐藏异常值] 箱线图自带的异常值点是带有 marker 的线条，直接将其强制隐形，防止与雨滴散点叠印
+        if line.get_marker() not in ['None', ' ', '', None]:
+            line.set_visible(False)
+            continue
+            
+        # [定制伞骨] 中位数与极值虚线
+        line.set_color(UMBRELLA_STYLE['edgecolor'])
+        line.set_linewidth(UMBRELLA_STYLE['linewidth'])
+        line.set_alpha(UMBRELLA_STYLE['alpha'])
+        line.set_zorder(5)
+
+    # 4. ⚡ 独立绘制“闪电” (均值标记)
+    means = [all_results[m]['mean_reward'] for m in model_ids]
+    y_positions = np.arange(len(model_ids))
+    ax.scatter(means, y_positions + LIGHTNING_STYLE['y_offset'], 
+               marker='D', color=LIGHTNING_STYLE['color'], 
+               edgecolors=LIGHTNING_STYLE['edgecolor'], 
+               linewidths=LIGHTNING_STYLE['linewidth'], 
+               s=LIGHTNING_STYLE['size'], alpha=LIGHTNING_STYLE['alpha'], zorder=10)
+                
+    # 5. [定制坐标与外框]
+    plt.title('规控策略奖励双峰分布雨云图', pad=AXES_STYLE['title_pad'])
+    plt.xlabel('回合累计奖励')
+    plt.ylabel('')
+    plt.grid(axis='x', linestyle='--', alpha=AXES_STYLE['grid_alpha'])
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    
+    # 🛠️ [横坐标范围应用]
+    if AXES_STYLE['x_range'] is not None:
+        ax.set_xlim(AXES_STYLE['x_range'])
+    
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color(AXES_STYLE['spine_color'])
+        spine.set_linewidth(AXES_STYLE['spine_width'])
+    
+    _save_and_close_fig('05_reward_raincloud')
+
+    # ----------------------------------------------------
+    # 🆕 图 06：气泡散点帕累托前沿图 (Bubble Scatter / Pareto Front)
+    # X轴: 安全性(存活率) | Y轴: 收益(平均奖励) | 气泡大小: 效率(平均速度)
+    # 直观展示传统模型与 Diff-SAC 混合专家在“安全-收益”权衡上的站位
+    # ----------------------------------------------------
+    plt.figure(figsize=(9.0, 7.0))
+    mean_rewards = [all_results[m]['mean_reward'] for m in model_ids]
+    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
+    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
+    
+    # 气泡大小映射：放大速度差异以增强视觉冲击力
+    max_speed_val = max(mean_speeds) if len(mean_speeds) > 0 else 1.0
+    sizes = [max(20, (s / max_speed_val) ** 2 * 600) for s in mean_speeds]
+    
+    plt.scatter(survival_rates, mean_rewards, s=sizes, c=colors, alpha=0.75, edgecolors='black', linewidth=1.5)
+    
+    # 为每个气泡添加文本标注
+    for i, txt in enumerate(display_labels):
+        plt.annotate(txt, (survival_rates[i], mean_rewards[i]), 
+                     xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', fontsize=10, fontweight='bold')
+                     
+    plt.title('安全-收益帕累托前沿与均速气泡图')
+    plt.xlabel('存活率 (%) [越靠右越安全]')
+    plt.ylabel('平均累计奖励 [越靠上收益越高]')
+    plt.grid(linestyle='--', alpha=0.5)
+    
+    # 自适应扩展画幅，防止文本和气泡被边界裁切
+    plt.xlim(max(0, min(survival_rates) - 15), min(105, max(survival_rates) + 15))
+    y_range = max(mean_rewards) - min(mean_rewards) if max(mean_rewards) != min(mean_rewards) else 10
+    plt.ylim(min(mean_rewards) - y_range * 0.15, max(mean_rewards) + y_range * 0.25)
+    plt.gca().xaxis.set_major_locator(MaxNLocator(nbins=5))
+    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
+    
+    _save_and_close_fig('06_pareto_bubble_scatter')
+
+    # ----------------------------------------------------
+    # 🆕 图 07：综合性能六边形战士雷达图 (Radar Chart / Spider Web)
+    # 将 奖励、存活、速度、稳定性 四维归一化，展现综合维度的面积包围感
+    # ----------------------------------------------------
+    metrics_names = ['平均奖励', '存活率', '平均速度', '稳定性']
+    num_vars = len(metrics_names)
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    angles += angles[:1] # 闭合雷达圈
+    
+    def normalize(arr):
+        min_v, max_v = min(arr), max(arr)
+        return [(x - min_v) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
+        
+    # 稳定性定义为：变异系数(CV)越小，值越高 -> 取负值进行归一化
+    stabilities = [-(all_results[m]['std_reward'] / max(1e-3, all_results[m]['mean_reward'])) for m in model_ids]
+    
+    norm_rewards, norm_survivals = normalize(mean_rewards), normalize(survival_rates)
+    norm_speeds, norm_stabilities = normalize(mean_speeds), normalize(stabilities)
+    
+    fig, ax = plt.subplots(figsize=(8.0, 8.0), subplot_kw=dict(polar=True))
+    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
+        values = [norm_rewards[i], norm_survivals[i], norm_speeds[i], norm_stabilities[i]]
+        values += values[:1]
+        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label)
+        ax.fill(angles, values, color=color, alpha=0.10)
+        
+    ax.set_theta_offset(np.pi / 2) # 从正上方起针
+    ax.set_theta_direction(-1) # 顺时针渲染
+    ax.set_thetagrids(np.degrees(angles[:-1]), metrics_names, fontsize=12, fontweight='bold')
+    ax.set_ylim(0, 1.1)
+    ax.set_yticklabels([]) # 隐藏圈内的数字，保持清爽
+    
+    plt.title('综合性能六边形雷达图', y=1.08)
+    plt.legend(loc='upper right', bbox_to_anchor=(1.35, 1.1))
+    
+    _save_and_close_fig('07_performance_radar')
+
+    # ====================================================
+    # 🌟 [动作分布] 针对动作流形的网格可视化图表 08 ~ 10 (原 05 ~ 07)
+    # ==========================================
+
     # ----------------------------------------------------
     # [准备子图布局] 动态计算最优网格排列 (如 1x3, 2x2, 2x3, 2x4)
     # ----------------------------------------------------
@@ -572,7 +762,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     subplot_height = 4.0
     
     # ----------------------------------------------------
-    # 图 5：动作分布 - 极小散点网格图 (Scatter Grid)
+    # 图 08：动作分布 - 极小散点网格图 (Scatter Grid)
     # ----------------------------------------------------
     fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
     axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
@@ -607,10 +797,10 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         else:
             ax.axis('off')
             
-    _save_and_close_fig('05_action_scatter_grid')
+    _save_and_close_fig('08_action_scatter_grid')
 
     # ----------------------------------------------------
-    # 图 6：动作分布 - 核密度分布网格图 (KDE Grid)
+    # 图 09：动作分布 - 核密度分布网格图 (KDE Grid)
     # ----------------------------------------------------
     fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
     axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
@@ -655,10 +845,10 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         else:
             ax.axis('off')
             
-    _save_and_close_fig('06_action_kde_grid')
+    _save_and_close_fig('09_action_kde_grid')
 
     # ----------------------------------------------------
-    # 图 7：动作分布 - 六边形分箱网格图 (Hexbin Grid)
+    # 图 10：动作分布 - 六边形分箱网格图 (Hexbin Grid)
     # ----------------------------------------------------
     fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
     axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
@@ -692,137 +882,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         else:
             ax.axis('off')
             
-    _save_and_close_fig('07_action_hexbin_grid')
-
-    # ====================================================
-    # 🌟 [高级可视化方案] 针对论文的高信息密度图表 08 ~ 10
-    # ==========================================
-
-    # ----------------------------------------------------
-    # 🆕 图 08：累计奖励雨云图 (Raincloud Plot) 
-    # 结合了散点、箱线和半小提琴图，是展示核密度与真实数据分布的终极形态
-    # ----------------------------------------------------
-    plt.figure(figsize=(12.0, 8.0)) # 调整为更宽阔的画幅，防止标签和数据点被挤压
-    
-    import ptitprince as pt
-    import pandas as pd
-    
-    # 1. 构造强制规范的长表格式 (Long-form) DataFrame
-    flat_rewards, flat_labels = [], []
-    for mid, label in zip(model_ids, display_labels):
-        rewards = all_results[mid]['raw_rewards']
-        flat_rewards.extend(rewards)
-        flat_labels.extend([label] * len(rewards))
-        
-    df_rain = pd.DataFrame({'Reward': flat_rewards, 'Algorithm': flat_labels})
-    
-    # 剔除可能存在的缺失值，保证渲染不出错
-    df_rain = df_rain.dropna(subset=['Reward'])
-    # 强制将奖励列转换为浮点数，彻底杜绝核密度估计(KDE)和箱线图因数据类型错乱而消失
-    df_rain['Reward'] = df_rain['Reward'].astype(float)
-    
-    # 2. 绘制雨云图：【核心修复】ptitprince 底层强制要求 x 为类别，y 为数值，即便是横向(orient='h')也不能调换
-    pt.RainCloud(x='Algorithm', y='Reward', hue='Algorithm', data=df_rain, 
-                 palette=colors, orient='h', ax=plt.gca(),
-                 order=display_labels,         # 【核心修复】强制锁定渲染顺序，保障与后续均值对齐
-                 alpha=0.4, point_size=3,      # “雨” (Scatter)：使用 point_size 替代 size 防止底层 KDE 崩溃
-                 width_viol=0.6, width_box=0.1,# “云” (KDE) 与 “伞” (Boxplot) 宽度控制
-                 bw=0.2, dodge=True, pointplot=False, move=0.2,
-                 linewidth=1)                  # linewidth=1 保留微弱的同色系云朵边框
-                 
-    # 暴力剿灭 Seaborn 新版顽固的图例
-    if plt.gca().legend_ is not None:
-        plt.gca().legend_.remove()
-                 
-    # 3. ⚡ 补全第四层信息：“闪电” (均值标记)
-    means = [all_results[m]['mean_reward'] for m in model_ids]
-    y_positions = np.arange(len(model_ids))
-    # 在 ptitprince 中，move=0.2 会使得箱线图整体向下偏移约 0.1，我们让均值标记精准对齐它
-    plt.scatter(means, y_positions + 0.1, marker='D', color='gold', edgecolor='black', 
-                s=60, zorder=10)
-                
-    # 4. 样式清理与排版
-    plt.title('规控策略奖励双峰分布雨云图', pad=15)
-    plt.xlabel('回合累计奖励')
-    plt.ylabel('') # 隐藏 Y 轴标题，直接展示算法名
-    # 移除强制重置 yticks 的风险操作，将 Y 轴的类别对齐控制权完整交还给上方的 order 参数
-    plt.grid(axis='x', linestyle='--', alpha=0.4)
-    plt.gca().xaxis.set_major_locator(MaxNLocator(nbins=5))
-    sns.despine(left=True, bottom=True) # 彻底隐藏图表外框，打造悬浮感
-    
-    _save_and_close_fig('08_reward_raincloud')
-
-    # ----------------------------------------------------
-    # 🆕 图 09：气泡散点帕累托前沿图 (Bubble Scatter / Pareto Front)
-    # X轴: 安全性(存活率) | Y轴: 收益(平均奖励) | 气泡大小: 效率(平均速度)
-    # 直观展示传统模型与 Diff-SAC 混合专家在“安全-收益”权衡上的站位
-    # ----------------------------------------------------
-    plt.figure(figsize=(9.0, 7.0))
-    mean_rewards = [all_results[m]['mean_reward'] for m in model_ids]
-    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
-    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
-    
-    # 气泡大小映射：放大速度差异以增强视觉冲击力
-    max_speed_val = max(mean_speeds) if len(mean_speeds) > 0 else 1.0
-    sizes = [max(20, (s / max_speed_val) ** 2 * 600) for s in mean_speeds]
-    
-    plt.scatter(survival_rates, mean_rewards, s=sizes, c=colors, alpha=0.75, edgecolors='black', linewidth=1.5)
-    
-    # 为每个气泡添加文本标注
-    for i, txt in enumerate(display_labels):
-        plt.annotate(txt, (survival_rates[i], mean_rewards[i]), 
-                     xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', fontsize=10, fontweight='bold')
-                     
-    plt.title('安全-收益帕累托前沿与均速气泡图')
-    plt.xlabel('存活率 (%) [越靠右越安全]')
-    plt.ylabel('平均累计奖励 [越靠上收益越高]')
-    plt.grid(linestyle='--', alpha=0.5)
-    
-    # 自适应扩展画幅，防止文本和气泡被边界裁切
-    plt.xlim(max(0, min(survival_rates) - 15), min(105, max(survival_rates) + 15))
-    y_range = max(mean_rewards) - min(mean_rewards) if max(mean_rewards) != min(mean_rewards) else 10
-    plt.ylim(min(mean_rewards) - y_range * 0.15, max(mean_rewards) + y_range * 0.25)
-    plt.gca().xaxis.set_major_locator(MaxNLocator(nbins=5))
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-    
-    _save_and_close_fig('09_pareto_bubble_scatter')
-
-    # ----------------------------------------------------
-    # 🆕 图 10：综合性能六边形战士雷达图 (Radar Chart / Spider Web)
-    # 将 奖励、存活、速度、稳定性 四维归一化，展现综合维度的面积包围感
-    # ----------------------------------------------------
-    metrics_names = ['平均奖励', '存活率', '平均速度', '稳定性']
-    num_vars = len(metrics_names)
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1] # 闭合雷达圈
-    
-    def normalize(arr):
-        min_v, max_v = min(arr), max(arr)
-        return [(x - min_v) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
-        
-    # 稳定性定义为：变异系数(CV)越小，值越高 -> 取负值进行归一化
-    stabilities = [-(all_results[m]['std_reward'] / max(1e-3, all_results[m]['mean_reward'])) for m in model_ids]
-    
-    norm_rewards, norm_survivals = normalize(mean_rewards), normalize(survival_rates)
-    norm_speeds, norm_stabilities = normalize(mean_speeds), normalize(stabilities)
-    
-    fig, ax = plt.subplots(figsize=(8.0, 8.0), subplot_kw=dict(polar=True))
-    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
-        values = [norm_rewards[i], norm_survivals[i], norm_speeds[i], norm_stabilities[i]]
-        values += values[:1]
-        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label)
-        ax.fill(angles, values, color=color, alpha=0.10)
-        
-    ax.set_theta_offset(np.pi / 2) # 从正上方起针
-    ax.set_theta_direction(-1) # 顺时针渲染
-    ax.set_thetagrids(np.degrees(angles[:-1]), metrics_names, fontsize=12, fontweight='bold')
-    ax.set_ylim(0, 1.1)
-    ax.set_yticklabels([]) # 隐藏圈内的数字，保持清爽
-    
-    plt.title('综合性能六边形雷达图', y=1.08)
-    plt.legend(loc='upper right', bbox_to_anchor=(1.35, 1.1))
-    
-    _save_and_close_fig('10_performance_radar')
+    _save_and_close_fig('10_action_hexbin_grid')
 
     print(f"📈 7 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
@@ -926,7 +986,8 @@ if __name__ == "__main__":
     # ==========================================
     PLOT_ONLY = True
     # 如果 PLOT_ONLY = True，请填入之前跑出来的 all_results.pkl 绝对或相对路径
-    LOAD_PKL_PATH = "outputs/racetrack-v0/eval_results/[R01_R05_DR01_DR02_DR05_DR06_DR07_DR08]_20260515_022757/data/all_results.pkl"
+    # LOAD_PKL_PATH = "outputs/racetrack-v0/eval_results/[R01_R05_DR01_DR02_DR05_DR06_DR07_DR08]_20260515_022757/data/all_results.pkl"
+    LOAD_PKL_PATH = "outputs/merge-v0/eval_results/[M01_M03_M04_DM01_DM04_DM05_DM06_DM08]_20260515_053021/data/all_results.pkl"
 
     # 🌟 图表标签与出图目录切换开关
     # True: 使用学术中文规范标签 (出图到 plots_academic_cn 目录)
