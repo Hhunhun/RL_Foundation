@@ -340,6 +340,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # ----------------------------------------------------
     # 图 1：累计奖励箱线图 (新增均值文本标注)
     # ----------------------------------------------------
+    # 🎨 [图 01 视觉配置] 个性化调节箱线图的通透感
+    PLOT01_STYLE = {'alpha': 0.40}
+    
     plt.figure(figsize=(8.0, 6.0)) # 放大画幅，保持 4:3 比例，使 12 号字体显示更舒展
     reward_data = [all_results[mid]['raw_rewards'] for mid in model_ids]
     
@@ -354,12 +357,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 为每个箱体填上对应的调色盘颜色
     for patch, color in zip(bplot['boxes'], colors):
         patch.set_facecolor(color)
-        patch.set_alpha(0.7)
+        patch.set_alpha(PLOT01_STYLE['alpha']) # 独立控制的通透感
         
     plt.title('规控策略演进与消融实验对比')
     plt.ylabel('回合累计奖励')
     plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
     plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
 
     # 🆕 新增：在绿色均值三角形旁边标注具体的数值
@@ -374,9 +377,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # ----------------------------------------------------
     # 🆕 图 2：策略方差/标准差柱状图 (越低代表模型越稳定)
     # ----------------------------------------------------
+    # 🎨 [图 02 视觉配置] 个性化调节柱状图的通透感与边框粗细
+    PLOT02_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     std_rewards = [all_results[m]['std_reward'] for m in model_ids]
-    bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=0.85, edgecolor='none')
+    bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=PLOT02_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02_STYLE['linewidth'])
     plt.title('规控策略稳定性对比')
     plt.ylabel('奖励标准差')
     
@@ -384,7 +390,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     max_std = max(std_rewards) if len(std_rewards) > 0 else 1.0
     plt.ylim(0, max_std * 1.15)
     plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.3)
+    plt.grid(axis='y', linestyle='--', alpha=0.4)
     plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
 
     # 在柱子上标注具体数字
@@ -398,14 +404,17 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # ----------------------------------------------------
     # 图 3：存活率柱状图
     # ----------------------------------------------------
+    # 🎨 [图 03 视觉配置]
+    PLOT03_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
-    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=0.85, edgecolor='none')
+    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=PLOT03_STYLE['alpha'], edgecolor=colors, linewidth=PLOT03_STYLE['linewidth'])
     plt.title('规控策略存活率对比')
     plt.ylabel('存活率 (%)')
     plt.ylim(0, 110) # 扩大顶部留白，防止 100.0% 标签被切角
     plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.3)
+    plt.grid(axis='y', linestyle='--', alpha=0.4)
     plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
 
     # 在柱子上标注具体数字
@@ -418,9 +427,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # ----------------------------------------------------
     # 🆕 图 4：平均纵向速度柱状图 (修复自适应 Y 轴)
     # ----------------------------------------------------
+    # 🎨 [图 04 视觉配置]
+    PLOT04_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
-    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=0.85, edgecolor='none')
+    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=PLOT04_STYLE['alpha'], edgecolor=colors, linewidth=PLOT04_STYLE['linewidth'])
     plt.title('平均纵向速度对比')
     plt.ylabel('平均纵向速度 (m/s)')
 
@@ -435,7 +447,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     plt.ylim(y_min, y_max)
 
     plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.5)
+    plt.grid(axis='y', linestyle='--', alpha=0.4)
     plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
 
     # 在柱子上标注具体数字
@@ -454,9 +466,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 方案 A：图 02a 变异系数对比 (Coefficient of Variation)
     # 衡量单位收益下的相对波动风险，消除高分基数带来的绝对方差惩罚
     # ----------------------------------------------------
+    # 🎨 [图 02a 视觉配置]
+    PLOT02A_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     cvs = [all_results[m]['std_reward'] / all_results[m]['mean_reward'] if all_results[m]['mean_reward'] != 0 else 0 for m in model_ids]
-    bars_cv = plt.bar(display_labels, cvs, color=colors, alpha=0.85, edgecolor='none')
+    bars_cv = plt.bar(display_labels, cvs, color=colors, alpha=PLOT02A_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02A_STYLE['linewidth'])
     plt.title('规控策略相对波动对比')
     plt.ylabel('变异系数')
 
@@ -476,9 +491,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 方案 B：图 02b 回合间波动率对比 (Episodic Volatility)
     # 计算相邻回合之间的奖励跳跃幅度，衡量模型在不同随机路况下的表现平滑度
     # ----------------------------------------------------
+    # 🎨 [图 02b 视觉配置]
+    PLOT02B_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     volatilities = [np.std(np.diff(all_results[m]['raw_rewards'])) if len(all_results[m]['raw_rewards']) > 1 else 0.0 for m in model_ids]
-    bars_vol = plt.bar(display_labels, volatilities, color=colors, alpha=0.85, edgecolor='none')
+    bars_vol = plt.bar(display_labels, volatilities, color=colors, alpha=PLOT02B_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02B_STYLE['linewidth'])
     plt.title('测试路况适应稳定性')
     plt.ylabel('相邻回合奖励差值的标准差')
 
@@ -498,6 +516,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 方案 C：图 02c 完赛局条件方差 (Conditional Std of Success)
     # 剔除撞车 (0分) 带来的极大两极分化，专门考察神仙局的发挥是否稳定
     # ----------------------------------------------------
+    # 🎨 [图 02c 视觉配置]
+    PLOT02C_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     cond_stds = []
     for m in model_ids:
@@ -506,7 +527,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         success_rewards = rewards[~is_crashed] # 仅保留没撞车的回合
         cond_stds.append(np.std(success_rewards) if len(success_rewards) > 0 else 0.0)
         
-    bars_cond = plt.bar(display_labels, cond_stds, color=colors, alpha=0.85, edgecolor='none')
+    bars_cond = plt.bar(display_labels, cond_stds, color=colors, alpha=PLOT02C_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02C_STYLE['linewidth'])
     plt.title('完赛局内表现稳定性')
     plt.ylabel('完赛局奖励标准差')
 
@@ -526,6 +547,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 方案 D：图 02d 动作平滑度方差 (Action Jerk Variance)
     # 深度扣题“扩散模型平滑噪声”：计算方向盘和油门在时间步上的抖动烈度
     # ----------------------------------------------------
+    # 🎨 [图 02d 视觉配置]
+    PLOT02D_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
     plt.figure(figsize=(8.0, 6.0))
     jerk_stds = []
     for m in model_ids:
@@ -538,7 +562,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         else:
             jerk_stds.append(0.0)
             
-    bars_jerk = plt.bar(display_labels, jerk_stds, color=colors, alpha=0.85, edgecolor='none')
+    bars_jerk = plt.bar(display_labels, jerk_stds, color=colors, alpha=PLOT02D_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02D_STYLE['linewidth'])
     plt.title('物理动作平滑度对比')
     plt.ylabel('动作变化量的平均标准差')
 
