@@ -338,8 +338,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         plt.close()
 
     # ----------------------------------------------------
-    # 图 1：累计奖励箱线图 (新增均值文本标注)
+    # 图 1：累计奖励箱线图 (已由图05雨云图上位替代，故屏蔽)
     # ----------------------------------------------------
+    """
     # 🎨 [图 01 视觉配置] 个性化调节箱线图的通透感
     PLOT01_STYLE = {'alpha': 0.40}
     
@@ -373,10 +374,12 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
                  color='green', fontsize=10, fontweight='bold')
 
     _save_and_close_fig('01_reward_boxplot')
+    """
 
     # ----------------------------------------------------
-    # 🆕 图 2：策略方差/标准差柱状图 (越低代表模型越稳定)
+    # 🆕 图 2：策略方差/标准差柱状图 (由变异系数CV上位替代，故屏蔽)
     # ----------------------------------------------------
+    """
     # 🎨 [图 02 视觉配置] 个性化调节柱状图的通透感与边框粗细
     PLOT02_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
     
@@ -400,6 +403,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         plt.text(bar.get_x() + bar.get_width() / 2, yval + max_std * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10)
 
     _save_and_close_fig('02_reward_variance_bar')
+    """
 
     # ----------------------------------------------------
     # 图 3：存活率柱状图
@@ -488,9 +492,10 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     _save_and_close_fig('02a_cv_bar')
 
     # ----------------------------------------------------
-    # 方案 B：图 02b 回合间波动率对比 (Episodic Volatility)
+    # 方案 B：图 02b 回合间波动率对比 (信息冗余，故屏蔽)
     # 计算相邻回合之间的奖励跳跃幅度，衡量模型在不同随机路况下的表现平滑度
     # ----------------------------------------------------
+    """
     # 🎨 [图 02b 视觉配置]
     PLOT02B_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
     
@@ -511,11 +516,13 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         plt.text(bar.get_x() + bar.get_width() / 2, yval + max_vol * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
     
     _save_and_close_fig('02b_eval_volatility_bar')
+    """
 
     # ----------------------------------------------------
-    # 方案 C：图 02c 完赛局条件方差 (Conditional Std of Success)
+    # 方案 C：图 02c 完赛局条件方差 (信息冗余，故屏蔽)
     # 剔除撞车 (0分) 带来的极大两极分化，专门考察神仙局的发挥是否稳定
     # ----------------------------------------------------
+    """
     # 🎨 [图 02c 视觉配置]
     PLOT02C_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
     
@@ -542,6 +549,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         plt.text(bar.get_x() + bar.get_width() / 2, yval + max_cond * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
     
     _save_and_close_fig('02c_conditional_std_bar')
+    """
 
     # ----------------------------------------------------
     # 方案 D：图 02d 动作平滑度方差 (Action Jerk Variance)
@@ -786,8 +794,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     subplot_height = 4.0
     
     # ----------------------------------------------------
-    # 图 08：动作分布 - 极小散点网格图 (Scatter Grid)
+    # 图 08：动作分布 - 极小散点网格图 (被 KDE 图替代，故屏蔽)
     # ----------------------------------------------------
+    """
     fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
     axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
     
@@ -822,6 +831,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
             ax.axis('off')
             
     _save_and_close_fig('08_action_scatter_grid')
+    """
 
     # ----------------------------------------------------
     # 图 09：动作分布 - 核密度分布网格图 (KDE Grid)
@@ -872,8 +882,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     _save_and_close_fig('09_action_kde_grid')
 
     # ----------------------------------------------------
-    # 图 10：动作分布 - 六边形分箱网格图 (Hexbin Grid)
+    # 图 10：动作分布 - 六边形分箱网格图 (与 KDE 作用重复，故屏蔽)
     # ----------------------------------------------------
+    """
     fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
     axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
     
@@ -907,8 +918,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
             ax.axis('off')
             
     _save_and_close_fig('10_action_hexbin_grid')
+    """
 
-    print(f"📈 7 张高质量对比图表已全部保存至: {os.path.abspath(save_dir)}")
+    print(f"📈 精简后的核心对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
 
 if __name__ == "__main__":
