@@ -10,6 +10,7 @@
 """
 
 import os
+import sys
 import csv
 import random
 import numpy as np
@@ -263,13 +264,22 @@ def evaluate_single_model(model_id, model_path, display_label, env_name, eval_ru
     env_eval.close()
 
     # 3. 结算统计学指标
+    mean_reward = np.mean(metrics['rewards'])
+    std_reward = np.std(metrics['rewards'])
+    cv = std_reward / max(1e-3, abs(mean_reward)) if mean_reward != 0 else 0.0
+    
+    actions_arr = np.array(metrics['actions'])
+    action_jerk_std = np.mean(np.std(np.diff(actions_arr, axis=0), axis=0)) if len(actions_arr) > 1 else 0.0
+
     results = {
-        'mean_reward': np.mean(metrics['rewards']),
-        'std_reward': np.std(metrics['rewards']),
+        'mean_reward': mean_reward,
+        'std_reward': std_reward,
+        'cv': cv,
+        'action_jerk_std': action_jerk_std,
         'survival_rate': (num_episodes - metrics['crashes']) / num_episodes * 100,
         'mean_speed': np.mean(metrics['speeds']),
         'raw_rewards': metrics['rewards'],
-        'actions': np.array(metrics['actions']), # 暴露出全部的动作张量
+        'actions': actions_arr, # 暴露出全部的动作张量
         'is_crashed': np.array(metrics['is_crashed']) # 暴露出每局的崩溃布尔值
     }
 
@@ -287,16 +297,22 @@ def save_metrics_to_csv(all_results, models_to_evaluate, save_dir):
     """
     os.makedirs(save_dir, exist_ok=True)
     csv_path = os.path.join(save_dir, 'summary_metrics.csv')
-    headers = ['模型版本 (Model)', '平均累计奖励 (Mean Reward)', '策略方差/标准差 (Std Reward)',
-               '存活率 (Survival Rate %)', '平均纵向速度 (Mean Speed m/s)']
+    headers = ['模型版本 (Model)', '平均累计奖励 (Mean Reward)', '变异系数 (CV)',
+               '存活率 (Survival Rate %)', '平均纵向速度 (Mean Speed m/s)', '控制平顺性 (Action Jerk Std)']
 
     with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         for model_id, res in all_results.items():
             display_label = models_to_evaluate[model_id]["display_name"] # 从原始配置中获取 display_name
-            writer.writerow([display_label, f"{res['mean_reward']:.2f}", f"{res['std_reward']:.2f}",
-                             f"{res['survival_rate']:.1f}", f"{res['mean_speed']:.2f}"])
+            writer.writerow([
+                display_label, 
+                f"{res['mean_reward']:.2f}", 
+                f"{res['cv']:.3f}",
+                f"{res['survival_rate']:.1f}", 
+                f"{res['mean_speed']:.2f}",
+                f"{res['action_jerk_std']:.3f}"
+            ])
     print(f"\n💾 量化指标数据已保存至 CSV: {os.path.abspath(csv_path)}")
 
 
@@ -474,7 +490,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     PLOT02A_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
     
     plt.figure(figsize=(8.0, 6.0))
-    cvs = [all_results[m]['std_reward'] / all_results[m]['mean_reward'] if all_results[m]['mean_reward'] != 0 else 0 for m in model_ids]
+    cvs = [all_results[m]['cv'] for m in model_ids]
     bars_cv = plt.bar(display_labels, cvs, color=colors, alpha=PLOT02A_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02A_STYLE['linewidth'])
     plt.title('规控策略相对波动对比')
     plt.ylabel('变异系数')
@@ -559,17 +575,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     PLOT02D_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
     
     plt.figure(figsize=(8.0, 6.0))
-    jerk_stds = []
-    for m in model_ids:
-        actions = all_results[m]['actions']
-        if len(actions) > 1:
-            # 计算相邻步的动作变化量 (Jerk)
-            jerk = np.diff(actions, axis=0)
-            # 计算各个动作维度的标准差，然后取平均作为该模型的总体动作方差
-            jerk_stds.append(np.mean(np.std(jerk, axis=0)))
-        else:
-            jerk_stds.append(0.0)
-            
+    jerk_stds = [all_results[m]['action_jerk_std'] for m in model_ids]
     bars_jerk = plt.bar(display_labels, jerk_stds, color=colors, alpha=PLOT02D_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02D_STYLE['linewidth'])
     plt.title('物理动作平滑度对比')
     plt.ylabel('动作变化量的平均标准差')
@@ -736,38 +742,72 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     _save_and_close_fig('06_pareto_bubble_scatter')
 
     # ----------------------------------------------------
-    # 🆕 图 07：综合性能六边形战士雷达图 (Radar Chart / Spider Web)
-    # 将 奖励、存活、速度、稳定性 四维归一化，展现综合维度的面积包围感
+    # 🆕 图 07：学术级五维雷达图 (Radar Chart)
+    # 包含任务效能、安全保障、通行效率、策略稳定性、控制平顺性
     # ----------------------------------------------------
-    metrics_names = ['平均奖励', '存活率', '平均速度', '稳定性']
+    metrics_names = ['任务效能', '安全保障', '通行效率', '策略稳定性', '控制平顺性']
     num_vars = len(metrics_names)
     angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
     angles += angles[:1] # 闭合雷达圈
     
-    def normalize(arr):
+    def normalize_positive(arr):
         min_v, max_v = min(arr), max(arr)
-        return [(x - min_v) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
+        return [0.2 + 0.8 * (x - min_v) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
         
-    # 稳定性定义为：变异系数(CV)越小，值越高 -> 取负值进行归一化
-    stabilities = [-(all_results[m]['std_reward'] / max(1e-3, all_results[m]['mean_reward'])) for m in model_ids]
-    
-    norm_rewards, norm_survivals = normalize(mean_rewards), normalize(survival_rates)
-    norm_speeds, norm_stabilities = normalize(mean_speeds), normalize(stabilities)
+    def normalize_negative(arr):
+        min_v, max_v = min(arr), max(arr)
+        return [0.2 + 0.8 * (max_v - x) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
+        
+    # 1. 抽取并计算各个原始维度数据
+    mean_rewards = [all_results[m]['mean_reward'] for m in model_ids]
+    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
+    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
+    cvs = [all_results[m]['cv'] for m in model_ids]
+    jerk_stds = [all_results[m]['action_jerk_std'] for m in model_ids]
+            
+    # 2. 严格执行 Min-Max 归一化逻辑
+    norm_rewards = normalize_positive(mean_rewards)
+    norm_survivals = normalize_positive(survival_rates)
+    norm_speeds = normalize_positive(mean_speeds)
+    norm_cvs = normalize_negative(cvs)
+    norm_jerks = normalize_negative(jerk_stds)
     
     fig, ax = plt.subplots(figsize=(8.0, 8.0), subplot_kw=dict(polar=True))
+    
+    # 3. 清理坐标系底层杂质，重构纯净版多边形网格
+    ax.spines['polar'].set_visible(False)
+    ax.yaxis.grid(False)
+    ax.xaxis.grid(False)
+    
+    # 绘制正五边形刻度围栏
+    for level in [0.2, 0.4, 0.6, 0.8, 1.0]:
+        grid_values = [level] * num_vars
+        grid_values += grid_values[:1]
+        ax.plot(angles, grid_values, color='gray', linestyle='--', linewidth=0.8, alpha=0.5, zorder=0)
+        
+    # 绘制中心到顶点的骨架射线
+    for angle in angles[:-1]:
+        ax.plot([angle, angle], [0, 1.0], color='gray', linestyle='-', linewidth=0.8, alpha=0.5, zorder=0)
+
+    # 4. 铺设模型评估轨迹层
     for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
-        values = [norm_rewards[i], norm_survivals[i], norm_speeds[i], norm_stabilities[i]]
+        values = [norm_rewards[i], norm_survivals[i], norm_speeds[i], norm_cvs[i], norm_jerks[i]]
         values += values[:1]
-        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label)
-        ax.fill(angles, values, color=color, alpha=0.10)
+        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label,
+                marker='o', markersize=6, markeredgecolor='white', zorder=2)
+        ax.fill(angles, values, color=color, alpha=0.15, zorder=1)
         
     ax.set_theta_offset(np.pi / 2) # 从正上方起针
     ax.set_theta_direction(-1) # 顺时针渲染
     ax.set_thetagrids(np.degrees(angles[:-1]), metrics_names, fontsize=12, fontweight='bold')
-    ax.set_ylim(0, 1.1)
-    ax.set_yticklabels([]) # 隐藏圈内的数字，保持清爽
+    ax.set_ylim(0, 1.05)
     
-    plt.title('综合性能六边形雷达图', y=1.08)
+    # 精准设置向上的单一主轴刻度标签
+    ax.set_rlabel_position(0)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], color='dimgray', fontsize=10)
+    
+    plt.title('五维综合性能雷达图', y=1.08)
     plt.legend(loc='upper right', bbox_to_anchor=(1.35, 1.1))
     
     _save_and_close_fig('07_performance_radar')
@@ -925,14 +965,25 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
 
 if __name__ == "__main__":
     # ==========================================
-    # 终端交互：选择评估环境
+    # 终端交互配置终端
     # ==========================================
     print("🤖 使用统一模型评估终端")
     print("==========================================")
-    print("[H] Highway 环境 (highway-v0)")
-    print("[M] Merge 环境 (merge-v0)")
-    print("[R] Racetrack 环境 (racetrack-v0)")
-    env_choice = input("👉 请选择评估环境 (H, M 或 R，默认 H): ").strip().upper()
+    
+    # 1. 选择运行模式
+    print("👉 请选择运行模式:")
+    print("  [1] 全量评估 (重新运行仿真测试并保存数据)")
+    print("  [2] 快速重绘 (跳过仿真，读取最新已有数据直接出图)")
+    mode_choice = input("请输入 1 或 2 (默认 1): ").strip()
+    PLOT_ONLY = (mode_choice == '2')
+    
+    # 2. 选择环境
+    print("==========================================")
+    print("👉 请选择评估环境:")
+    print("  [H] Highway 环境 (highway-v0)")
+    print("  [M] Merge 环境 (merge-v0)")
+    print("  [R] Racetrack 环境 (racetrack-v0)")
+    env_choice = input("请输入 H, M 或 R (默认 H): ").strip().upper()
     if env_choice == 'M':
         TARGET_ENV = "merge-v0"
     elif env_choice == 'R':
@@ -940,6 +991,36 @@ if __name__ == "__main__":
     else:
         TARGET_ENV = "highway-v0"
     print(f"✅ 已锁定评估环境: {TARGET_ENV}")
+
+    # 3. 自动寻找 pkl (如果开启重绘)
+    LOAD_PKL_PATH = None
+    if PLOT_ONLY:
+        eval_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs", TARGET_ENV, "eval_results")
+        if os.path.exists(eval_base_dir):
+            subdirs = [os.path.join(eval_base_dir, d) for d in os.listdir(eval_base_dir) if os.path.isdir(os.path.join(eval_base_dir, d))]
+            subdirs.sort(key=os.path.getmtime, reverse=True)
+            for subdir in subdirs:
+                pkl_file = os.path.join(subdir, "data", "all_results.pkl")
+                if os.path.exists(pkl_file):
+                    LOAD_PKL_PATH = pkl_file
+                    break
+            
+            if LOAD_PKL_PATH:
+                print(f"✅ 自动找到最新数据文件: {LOAD_PKL_PATH}")
+            else:
+                print(f"❌ 未在该环境下找到任何 all_results.pkl 文件，请先运行 [1] 全量评估！")
+                sys.exit(1)
+        else:
+            print(f"❌ 目录 {eval_base_dir} 不存在，请先运行 [1] 全量评估！")
+            sys.exit(1)
+
+    # 4. 选择图表标签风格
+    print("==========================================")
+    print("👉 请选择图表标签风格:")
+    print("  [1] 原始工程调试标签 (例如: DM01 纯 BC 克隆)")
+    print("  [2] 学术中文规范标签 (例如: Diff-SAC (纯行为克隆))")
+    label_choice = input("请输入 1 或 2 (默认 1): ").strip()
+    USE_ACADEMIC_LABELS = (label_choice == '2')
     print("==========================================")
 
     # ==========================================
@@ -952,27 +1033,26 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC基线模型 (Baseline)"},
-            #"M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "raw_name": "M02 高效平滑", "acad_name": "SAC高效平滑 (Smooth)"},
-            "M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC激进策略 (Aggressive)"},
-            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC安全策略 (Safety)"},
-            #"M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC耐心等待 (Patient)"},
-            #"M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "raw_name": "M06 极限死刑", "acad_name": "SAC极限惩罚 (Penalty)"},
-            #"M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "raw_name": "M07 平滑马拉松", "acad_name": "SAC平滑马拉松 (Marathon)"},
-            #"M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "raw_name": "M08 终极汇入", "acad_name": "SAC终极汇入 (Ultimate)"},
+            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC-标准基线"},
+            #"M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "raw_name": "M02 高效平滑", "acad_name": "SAC-平顺偏好"},
+            "M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC-效率导向"},
+            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC-安全约束"},
+            #"M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC-保守适应"},
+            #"M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "raw_name": "M06 极限死刑", "acad_name": "SAC-强安全约束"},
+            #"M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "raw_name": "M07 平滑马拉松", "acad_name": "SAC-长视界平顺"},
+            #"M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "raw_name": "M08 终极汇入", "acad_name": "SAC-综合强约束"},
 
-            # === 第一期 diff-SAC 实验 ===
-            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
-            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "raw_name": "DM02 微引导", "acad_name": "Diff-SAC (微Q值引导)", "data_path": SINGLE_DATA_PATH},
-            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "raw_name": "DM03 标准引导", "acad_name": "Diff-SAC (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
-            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
+            # === 第一期 diff-SAC 单专家实验 ===
+            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
+            #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "raw_name": "DM02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
+            #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "raw_name": "DM03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
+            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 diff-SAC 混合专家实验 ===
-            #"DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
-            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
-            #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
-            "DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
-
+            #"DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
+            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
+            #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
+            "DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
         }
 
     elif TARGET_ENV == "racetrack-v0":
@@ -981,26 +1061,26 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "raw_name": "R01 基础 SAC", "acad_name": "SAC基线模型 (Baseline)"},
-            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "raw_name": "R02 速度优先", "acad_name": "SAC速度优先 (Speed)"},
-            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "raw_name": "R03 安全优先", "acad_name": "SAC安全优先 (Safety)"},
-            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "raw_name": "R04 极限漂移", "acad_name": "SAC极限漂移 (Drift)"},
-            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "raw_name": "R05 单专家", "acad_name": "SAC单专家策略 (Single-Expert)"},
-            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "raw_name": "R06 宽域动态", "acad_name": "SAC宽域动态 (Wide-Dynamic)"},
-            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "raw_name": "R07 零容忍", "acad_name": "SAC零容忍 (Zero-Tolerance)"},
-            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "raw_name": "R08 专家底座", "acad_name": "SAC专家底座 (Expert-Pro)"},
+            "R01": {"path": "outputs/racetrack-v0/models/SAC_R01_SAC_Baseline_20260505_033212/sac_racetrack_final.pth", "raw_name": "R01 基础 SAC", "acad_name": "SAC-标准基线"},
+            #"R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "raw_name": "R02 速度优先", "acad_name": "SAC-效率导向"},
+            #"R03": {"path": "outputs/racetrack-v0/models/SAC_R03_SAC_Safety_Priority_20260505_083207/sac_racetrack_final.pth", "raw_name": "R03 安全优先", "acad_name": "SAC-安全约束"},
+            #"R04": {"path": "outputs/racetrack-v0/models/SAC_R04_SAC_Extreme_Drift_20260505_110254/sac_racetrack_final.pth", "raw_name": "R04 极限漂移", "acad_name": "SAC-无约束探索"},
+            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "raw_name": "R05 单专家", "acad_name": "SAC-平顺专家"},
+            #"R06": {"path": "outputs/racetrack-v0/models/SAC_R06_SAC_Wide_Dynamic_20260505_152958/sac_racetrack_final.pth", "raw_name": "R06 宽域动态", "acad_name": "SAC-宽域动态"},
+            #"R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "raw_name": "R07 零容忍", "acad_name": "SAC-强安全约束"},
+            #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "raw_name": "R08 专家底座", "acad_name": "SAC-专家基准"},
     
-            # === 第一期 diff-SAC 实验 ===
-            #"DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "raw_name": "DR01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
-            #"DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "raw_name": "DR02 微引导", "acad_name": "Diff-SAC (弱Q值引导)", "data_path": SINGLE_DATA_PATH},
-            #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260510_092222/online_finetune/diff_sac_final.pth", "raw_name": "DR03 标准引导", "acad_name": "Diff-SAC (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
-            #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260510_123826/online_finetune/diff_sac_final.pth", "raw_name": "DR04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
+            # === 第一期 diff-SAC 单专家实验 ===
+            #"DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "raw_name": "DR01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
+            #"DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "raw_name": "DR02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
+            #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260510_092222/online_finetune/diff_sac_final.pth", "raw_name": "DR03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
+            #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260510_123826/online_finetune/diff_sac_final.pth", "raw_name": "DR04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 Diff-SAC 混合专家实验 ===
-            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260510_155536/online_finetune/diff_sac_final.pth", "raw_name": "DR05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
-            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "raw_name": "DR06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
-            #"DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "raw_name": "DR07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
-            #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260510_155536/online_finetune/diff_sac_final.pth", "raw_name": "DR05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
+            "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "raw_name": "DR06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
+            #"DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "raw_name": "DR07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
+            #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
         }
 
     else: # highway-v0
@@ -1009,37 +1089,23 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "H01": {"path": "outputs/highway-v0/models/SAC_H01_Base_Highway_20260511_225245/sac_highway_final.pth", "raw_name": "H01 基础高速", "acad_name": "SAC基线模型 (Baseline)"},
-            "H02": {"path": "outputs/highway-v0/models/SAC_H02_Safety_Priority_20260512_040012/sac_highway_final.pth", "raw_name": "H02 安全优先", "acad_name": "SAC安全优先 (Safety)"},
-            "H03": {"path": "outputs/highway-v0/models/SAC_H03_Speed_Priority_20260512_100655/sac_highway_final.pth", "raw_name": "H03 速度优先", "acad_name": "SAC速度优先 (Speed)"},
-            "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "raw_name": "H04 拥堵路况", "acad_name": "SAC拥堵策略 (Traffic-Jam)"},
+            "H01": {"path": "outputs/highway-v0/models/SAC_H01_Base_Highway_20260511_225245/sac_highway_final.pth", "raw_name": "H01 基础高速", "acad_name": "SAC-标准基线"},
+            "H02": {"path": "outputs/highway-v0/models/SAC_H02_Safety_Priority_20260512_040012/sac_highway_final.pth", "raw_name": "H02 安全优先", "acad_name": "SAC-安全约束"},
+            "H03": {"path": "outputs/highway-v0/models/SAC_H03_Speed_Priority_20260512_100655/sac_highway_final.pth", "raw_name": "H03 速度优先", "acad_name": "SAC-效率导向"},
+            "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "raw_name": "H04 拥堵路况", "acad_name": "SAC-拥堵适应"},
 
-            # === 第一期 diff-SAC 实验 ===
-            "DH01": {"path": "outputs/highway-v0/models/DiffSAC_DH01_Pure_BC_20260514_023858/online_finetune/diff_sac_final.pth", "raw_name": "DH01 纯 BC 克隆", "acad_name": "Diff-SAC单专家 (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
-            "DH02": {"path": "outputs/highway-v0/models/DiffSAC_DH02_Micro_Q_20260514_075013/online_finetune/diff_sac_final.pth", "raw_name": "DH02 微引导", "acad_name": "Diff-SAC单专家 (弱Q值引导)", "data_path": SINGLE_DATA_PATH},
-            "DH03": {"path": "outputs/highway-v0/models/DiffSAC_DH03_Standard_Q_20260514_130251/online_finetune/diff_sac_final.pth", "raw_name": "DH03 标准引导", "acad_name": "Diff-SAC单专家 (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
-            "DH04": {"path": "outputs/highway-v0/models/DiffSAC_DH04_Strong_Q_20260514_181545/online_finetune/diff_sac_final.pth", "raw_name": "DH04 强力干预", "acad_name": "Diff-SAC单专家 (强Q值引导)", "data_path": SINGLE_DATA_PATH},
+            # === 第一期 diff-SAC 单专家实验 ===
+            "DH01": {"path": "outputs/highway-v0/models/DiffSAC_DH01_Pure_BC_20260514_023858/online_finetune/diff_sac_final.pth", "raw_name": "DH01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
+            "DH02": {"path": "outputs/highway-v0/models/DiffSAC_DH02_Micro_Q_20260514_075013/online_finetune/diff_sac_final.pth", "raw_name": "DH02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
+            "DH03": {"path": "outputs/highway-v0/models/DiffSAC_DH03_Standard_Q_20260514_130251/online_finetune/diff_sac_final.pth", "raw_name": "DH03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
+            "DH04": {"path": "outputs/highway-v0/models/DiffSAC_DH04_Strong_Q_20260514_181545/online_finetune/diff_sac_final.pth", "raw_name": "DH04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
             
             # === 第二期 Diff-SAC 混合专家实验 ===
-            "DH05": {"path": "outputs/highway-v0/models/DiffSAC_DH05_Mixed_BC_20260515_050420/online_finetune/diff_sac_final.pth", "raw_name": "DH05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
-            "DH06": {"path": "outputs/highway-v0/models/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237/online_finetune/diff_sac_final.pth", "raw_name": "DH06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
-            "DH07": {"path": "outputs/highway-v0/models/DiffSAC_DH07_Mixed_Standard_Q_20260515_180112/online_finetune/diff_sac_final.pth", "raw_name": "DH07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
-            "DH08": {"path": "outputs/highway-v0/models/DiffSAC_DH08_Mixed_Strong_Q_20260516_015209/online_finetune/diff_sac_final.pth", "raw_name": "DH08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DH05": {"path": "outputs/highway-v0/models/DiffSAC_DH05_Mixed_BC_20260515_050420/online_finetune/diff_sac_final.pth", "raw_name": "DH05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
+            "DH06": {"path": "outputs/highway-v0/models/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237/online_finetune/diff_sac_final.pth", "raw_name": "DH06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
+            "DH07": {"path": "outputs/highway-v0/models/DiffSAC_DH07_Mixed_Standard_Q_20260515_180112/online_finetune/diff_sac_final.pth", "raw_name": "DH07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
+            "DH08": {"path": "outputs/highway-v0/models/DiffSAC_DH08_Mixed_Strong_Q_20260516_015209/online_finetune/diff_sac_final.pth", "raw_name": "DH08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
         }
-
-    # ==========================================
-    # 🚀 快速重绘模式配置 (断点续画/专心调图专用)
-    # ==========================================
-    PLOT_ONLY = True
-    # 如果 PLOT_ONLY = True，请填入之前跑出来的 all_results.pkl 绝对或相对路径
-    
-    #LOAD_PKL_PATH = "outputs/merge-v0/eval_results/[M01_M02_M03_M04_M05_M06_M07_M08_DM01_DM02_DM03_DM04_DM05_DM06_DM07_DM08]_20260516_021146/data/all_results.pkl"
-    LOAD_PKL_PATH = "outputs/racetrack-v0/eval_results/[R01_R02_R03_R04_R05_R06_R07_R08_DR01_DR02_DR03_DR04_DR05_DR06_DR07_DR08]_20260516_125952/data/all_results.pkl"
-
-    # 🌟 图表标签与出图目录切换开关
-    # True: 使用学术中文规范标签 (出图到 plots_academic_cn 目录)
-    # False: 使用原始工程调试标签 (出图到 plots_raw_tags 目录)
-    USE_ACADEMIC_LABELS = False
 
     # 动态应用所选名称
     for k, v in models_to_evaluate.items():
@@ -1100,6 +1166,15 @@ if __name__ == "__main__":
             all_results = {k: v for k, v in all_results.items() if k in models_to_evaluate}
             
             if len(all_results) > 0:
+                # [核心修复] 兼容老版本 pkl，动态补充 cv 和 action_jerk_std 字段
+                for m, res in all_results.items():
+                    if 'cv' not in res:
+                        mean_r = res.get('mean_reward', 0.0)
+                        res['cv'] = res.get('std_reward', 0.0) / max(1e-3, abs(mean_r)) if mean_r != 0 else 0.0
+                    if 'action_jerk_std' not in res:
+                        acts = res.get('actions', np.array([]))
+                        res['action_jerk_std'] = np.mean(np.std(np.diff(acts, axis=0), axis=0)) if len(acts) > 1 else 0.0
+
                 # 根据开关选择不同的出图子目录，防止互相覆盖
                 base_dir = os.path.dirname(os.path.dirname(LOAD_PKL_PATH))
                 plot_dir_name = "plots_academic_cn" if USE_ACADEMIC_LABELS else "plots_raw_tags"
