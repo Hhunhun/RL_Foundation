@@ -995,24 +995,35 @@ if __name__ == "__main__":
     # 3. 自动寻找 pkl (如果开启重绘)
     LOAD_PKL_PATH = None
     if PLOT_ONLY:
-        eval_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs", TARGET_ENV, "eval_results")
-        if os.path.exists(eval_base_dir):
-            subdirs = [os.path.join(eval_base_dir, d) for d in os.listdir(eval_base_dir) if os.path.isdir(os.path.join(eval_base_dir, d))]
-            subdirs.sort(key=os.path.getmtime, reverse=True)
-            for subdir in subdirs:
-                pkl_file = os.path.join(subdir, "data", "all_results.pkl")
-                if os.path.exists(pkl_file):
-                    LOAD_PKL_PATH = pkl_file
-                    break
-            
-            if LOAD_PKL_PATH:
-                print(f"✅ 自动找到最新数据文件: {LOAD_PKL_PATH}")
-            else:
-                print(f"❌ 未在该环境下找到任何 all_results.pkl 文件，请先运行 [1] 全量评估！")
-                sys.exit(1)
+        # 支持硬编码路径直达，节省检索时间
+        HARDCODED_PKL_PATHS = {
+            "merge-v0": r"E:\Autol_Lab\RL_Foundation\outputs\merge-v0\eval_results\[M01_M02_M03_M04_M05_M06_M07_M08_DM01_DM02_DM03_DM04_DM05_DM06_DM07_DM08]_20260516_021146\data\all_results.pkl",
+            "racetrack-v0": r"E:\Autol_Lab\RL_Foundation\outputs\racetrack-v0\eval_results\[R01_R02_R03_R04_R05_R06_R07_R08_DR01_DR02_DR03_DR04_DR05_DR06_DR07_DR08]_20260516_125952\data\all_results.pkl",
+            "highway-v0": r"E:\Autol_Lab\RL_Foundation\outputs\highway-v0\eval_results\[H01_H02_H03_H04_DH01_DH02_DH03_DH04_DH05_DH06_DH07_DH08]_20260516_152551\data\all_results.pkl"
+        }
+        
+        if TARGET_ENV in HARDCODED_PKL_PATHS and os.path.exists(HARDCODED_PKL_PATHS[TARGET_ENV]):
+            LOAD_PKL_PATH = HARDCODED_PKL_PATHS[TARGET_ENV]
+            print(f"✅ 已应用硬编码指定的数据文件: {LOAD_PKL_PATH}")
         else:
-            print(f"❌ 目录 {eval_base_dir} 不存在，请先运行 [1] 全量评估！")
-            sys.exit(1)
+            eval_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs", TARGET_ENV, "eval_results")
+            if os.path.exists(eval_base_dir):
+                subdirs = [os.path.join(eval_base_dir, d) for d in os.listdir(eval_base_dir) if os.path.isdir(os.path.join(eval_base_dir, d))]
+                subdirs.sort(key=os.path.getmtime, reverse=True)
+                for subdir in subdirs:
+                    pkl_file = os.path.join(subdir, "data", "all_results.pkl")
+                    if os.path.exists(pkl_file):
+                        LOAD_PKL_PATH = pkl_file
+                        break
+                
+                if LOAD_PKL_PATH:
+                    print(f"✅ 自动找到最新数据文件: {LOAD_PKL_PATH}")
+                else:
+                    print(f"❌ 未在该环境下找到任何 all_results.pkl 文件，请先运行 [1] 全量评估！")
+                    sys.exit(1)
+            else:
+                print(f"❌ 目录 {eval_base_dir} 不存在，请先运行 [1] 全量评估！")
+                sys.exit(1)
 
     # 4. 选择图表标签风格
     print("==========================================")
@@ -1092,19 +1103,19 @@ if __name__ == "__main__":
             "H01": {"path": "outputs/highway-v0/models/SAC_H01_Base_Highway_20260511_225245/sac_highway_final.pth", "raw_name": "H01 基础高速", "acad_name": "SAC-标准基线"},
             "H02": {"path": "outputs/highway-v0/models/SAC_H02_Safety_Priority_20260512_040012/sac_highway_final.pth", "raw_name": "H02 安全优先", "acad_name": "SAC-安全约束"},
             "H03": {"path": "outputs/highway-v0/models/SAC_H03_Speed_Priority_20260512_100655/sac_highway_final.pth", "raw_name": "H03 速度优先", "acad_name": "SAC-效率导向"},
-            "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "raw_name": "H04 拥堵路况", "acad_name": "SAC-拥堵适应"},
+            #"H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "raw_name": "H04 拥堵路况", "acad_name": "SAC-拥堵适应"},
 
             # === 第一期 diff-SAC 单专家实验 ===
             "DH01": {"path": "outputs/highway-v0/models/DiffSAC_DH01_Pure_BC_20260514_023858/online_finetune/diff_sac_final.pth", "raw_name": "DH01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
-            "DH02": {"path": "outputs/highway-v0/models/DiffSAC_DH02_Micro_Q_20260514_075013/online_finetune/diff_sac_final.pth", "raw_name": "DH02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
-            "DH03": {"path": "outputs/highway-v0/models/DiffSAC_DH03_Standard_Q_20260514_130251/online_finetune/diff_sac_final.pth", "raw_name": "DH03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
-            "DH04": {"path": "outputs/highway-v0/models/DiffSAC_DH04_Strong_Q_20260514_181545/online_finetune/diff_sac_final.pth", "raw_name": "DH04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
+            #"DH02": {"path": "outputs/highway-v0/models/DiffSAC_DH02_Micro_Q_20260514_075013/online_finetune/diff_sac_final.pth", "raw_name": "DH02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
+            #"DH03": {"path": "outputs/highway-v0/models/DiffSAC_DH03_Standard_Q_20260514_130251/online_finetune/diff_sac_final.pth", "raw_name": "DH03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
+            #"DH04": {"path": "outputs/highway-v0/models/DiffSAC_DH04_Strong_Q_20260514_181545/online_finetune/diff_sac_final.pth", "raw_name": "DH04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
             
             # === 第二期 Diff-SAC 混合专家实验 ===
-            "DH05": {"path": "outputs/highway-v0/models/DiffSAC_DH05_Mixed_BC_20260515_050420/online_finetune/diff_sac_final.pth", "raw_name": "DH05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
+            #"DH05": {"path": "outputs/highway-v0/models/DiffSAC_DH05_Mixed_BC_20260515_050420/online_finetune/diff_sac_final.pth", "raw_name": "DH05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
             "DH06": {"path": "outputs/highway-v0/models/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237/online_finetune/diff_sac_final.pth", "raw_name": "DH06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
-            "DH07": {"path": "outputs/highway-v0/models/DiffSAC_DH07_Mixed_Standard_Q_20260515_180112/online_finetune/diff_sac_final.pth", "raw_name": "DH07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
-            "DH08": {"path": "outputs/highway-v0/models/DiffSAC_DH08_Mixed_Strong_Q_20260516_015209/online_finetune/diff_sac_final.pth", "raw_name": "DH08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
+            #"DH07": {"path": "outputs/highway-v0/models/DiffSAC_DH07_Mixed_Standard_Q_20260515_180112/online_finetune/diff_sac_final.pth", "raw_name": "DH07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
+            #"DH08": {"path": "outputs/highway-v0/models/DiffSAC_DH08_Mixed_Strong_Q_20260516_015209/online_finetune/diff_sac_final.pth", "raw_name": "DH08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
         }
 
     # 动态应用所选名称
