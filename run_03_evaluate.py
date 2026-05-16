@@ -610,7 +610,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 🛠️ [坐标轴与外框调节区]
     AXES_STYLE      = {
         'title_pad': 15, 'grid_alpha': 0.4, 'spine_width': 1.2, 'spine_color': 'black',
-        'x_range': (30, 60)      # [横坐标范围调节]: 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
+        'x_range': None      # [横坐标范围调节]: 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
     }
     
     plt.figure(figsize=(12.0, 8.0)) 
@@ -943,9 +943,8 @@ if __name__ == "__main__":
     print("==========================================")
 
     # ==========================================
-    # 实验配置区：模型演进与消融实验大乱斗
+    # 实验配置区：模型演进与消融实验
     # ==========================================
-    # 🚨 动态配置：根据选择的环境切换专家数据集和待评估模型列表
     if TARGET_ENV == "merge-v0":
         # 定义该环境下的两大流形数据集路径
         SINGLE_DATA_PATH = "data/expert_data/merge-v0/dataset_M04_mode1_20260423_154904/expert_transitions.npz"
@@ -966,15 +965,16 @@ if __name__ == "__main__":
             "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
             #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "raw_name": "DM02 微引导", "acad_name": "Diff-SAC (微Q值引导)", "data_path": SINGLE_DATA_PATH},
             #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "raw_name": "DM03 标准引导", "acad_name": "Diff-SAC (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
-            "DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
+            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 diff-SAC 混合专家实验 ===
-            "DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
+            #"DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
             "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
             #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
             "DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
 
         }
+
     elif TARGET_ENV == "racetrack-v0":
         SINGLE_DATA_PATH = "data/expert_data/racetrack-v0/dataset_R05_mode1_20260506_011817/expert_transitions.npz"
         MIXED_DATA_PATH = "data/expert_data/racetrack-v0/dataset_mixed_0.8R05_0.2R01_20260506_142446/expert_transitions_mixed_0.8R05_0.2R01.npz"
@@ -991,17 +991,18 @@ if __name__ == "__main__":
             #"R08": {"path": "outputs/racetrack-v0/models/SAC_R08_SAC_Expert_Pro_20260505_184949/sac_racetrack_final.pth", "raw_name": "R08 专家底座", "acad_name": "SAC专家底座 (Expert-Pro)"},
     
             # === 第一期 diff-SAC 实验 ===
-            "DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "raw_name": "DR01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
-            "DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "raw_name": "DR02 微引导", "acad_name": "Diff-SAC (弱Q值引导)", "data_path": SINGLE_DATA_PATH},
+            #"DR01": {"path": "outputs/racetrack-v0/models/DiffSAC_DR01_Pure_BC_20260510_025310/online_finetune/diff_sac_final.pth", "raw_name": "DR01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
+            #"DR02": {"path": "outputs/racetrack-v0/models/DiffSAC_DR02_Micro_Q_20260510_060657/online_finetune/diff_sac_final.pth", "raw_name": "DR02 微引导", "acad_name": "Diff-SAC (弱Q值引导)", "data_path": SINGLE_DATA_PATH},
             #"DR03": {"path": "outputs/racetrack-v0/models/DiffSAC_DR03_Standard_Q_20260510_092222/online_finetune/diff_sac_final.pth", "raw_name": "DR03 标准引导", "acad_name": "Diff-SAC (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
             #"DR04": {"path": "outputs/racetrack-v0/models/DiffSAC_DR04_Strong_Q_20260510_123826/online_finetune/diff_sac_final.pth", "raw_name": "DR04 强力干预", "acad_name": "Diff-SAC (强Q值引导)", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 Diff-SAC 混合专家实验 ===
             "DR05": {"path": "outputs/racetrack-v0/models/DiffSAC_DR05_Mixed_BC_20260510_155536/online_finetune/diff_sac_final.pth", "raw_name": "DR05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
             "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "raw_name": "DR06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
-            "DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "raw_name": "DR07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
-            "DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
+            #"DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "raw_name": "DR07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
+            #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
         }
+
     else: # highway-v0
         SINGLE_DATA_PATH = "data/expert_data/highway-v0/dataset_H02_mode1_20260513_161932/expert_transitions.npz"
         MIXED_DATA_PATH = "data/expert_data/highway-v0/dataset_mixed_0.8H02_0.2H01_20260513_204225/expert_transitions_mixed_0.8H02_0.2H01.npz"
@@ -1014,7 +1015,16 @@ if __name__ == "__main__":
             "H04": {"path": "outputs/highway-v0/models/SAC_H04_Traffic_Jam_20260512_154634/sac_highway_final.pth", "raw_name": "H04 拥堵路况", "acad_name": "SAC拥堵策略 (Traffic-Jam)"},
 
             # === 第一期 diff-SAC 实验 ===
-            # "DH01": {"path": "...", "raw_name": "DH01 纯 BC 克隆", "acad_name": "Diff-SAC (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
+            "DH01": {"path": "outputs/highway-v0/models/DiffSAC_DH01_Pure_BC_20260514_023858/online_finetune/diff_sac_final.pth", "raw_name": "DH01 纯 BC 克隆", "acad_name": "Diff-SAC单专家 (纯行为克隆)", "data_path": SINGLE_DATA_PATH},
+            "DH02": {"path": "outputs/highway-v0/models/DiffSAC_DH02_Micro_Q_20260514_075013/online_finetune/diff_sac_final.pth", "raw_name": "DH02 微引导", "acad_name": "Diff-SAC单专家 (弱Q值引导)", "data_path": SINGLE_DATA_PATH},
+            "DH03": {"path": "outputs/highway-v0/models/DiffSAC_DH03_Standard_Q_20260514_130251/online_finetune/diff_sac_final.pth", "raw_name": "DH03 标准引导", "acad_name": "Diff-SAC单专家 (标准Q值引导)", "data_path": SINGLE_DATA_PATH},
+            "DH04": {"path": "outputs/highway-v0/models/DiffSAC_DH04_Strong_Q_20260514_181545/online_finetune/diff_sac_final.pth", "raw_name": "DH04 强力干预", "acad_name": "Diff-SAC单专家 (强Q值引导)", "data_path": SINGLE_DATA_PATH},
+            
+            # === 第二期 Diff-SAC 混合专家实验 ===
+            "DH05": {"path": "outputs/highway-v0/models/DiffSAC_DH05_Mixed_BC_20260515_050420/online_finetune/diff_sac_final.pth", "raw_name": "DH05 混合纯BC", "acad_name": "Diff-SAC多专家 (纯行为克隆)", "data_path": MIXED_DATA_PATH},
+            "DH06": {"path": "outputs/highway-v0/models/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237/online_finetune/diff_sac_final.pth", "raw_name": "DH06 混合微引导", "acad_name": "Diff-SAC多专家 (弱Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DH07": {"path": "outputs/highway-v0/models/DiffSAC_DH07_Mixed_Standard_Q_20260515_180112/online_finetune/diff_sac_final.pth", "raw_name": "DH07 混合标引导", "acad_name": "Diff-SAC多专家 (标准Q值引导)", "data_path": MIXED_DATA_PATH},
+            "DH08": {"path": "outputs/highway-v0/models/DiffSAC_DH08_Mixed_Strong_Q_20260516_015209/online_finetune/diff_sac_final.pth", "raw_name": "DH08 混合强干预", "acad_name": "Diff-SAC多专家 (强Q值引导)", "data_path": MIXED_DATA_PATH},
         }
 
     # ==========================================
@@ -1022,8 +1032,9 @@ if __name__ == "__main__":
     # ==========================================
     PLOT_ONLY = True
     # 如果 PLOT_ONLY = True，请填入之前跑出来的 all_results.pkl 绝对或相对路径
-    # LOAD_PKL_PATH = "outputs/racetrack-v0/eval_results/[R01_R05_DR01_DR02_DR05_DR06_DR07_DR08]_20260515_022757/data/all_results.pkl"
-    LOAD_PKL_PATH = "outputs/merge-v0/eval_results/[M01_M03_M04_DM01_DM04_DM05_DM06_DM08]_20260515_053021/data/all_results.pkl"
+    
+    #LOAD_PKL_PATH = "outputs/merge-v0/eval_results/[M01_M02_M03_M04_M05_M06_M07_M08_DM01_DM02_DM03_DM04_DM05_DM06_DM07_DM08]_20260516_021146/data/all_results.pkl"
+    LOAD_PKL_PATH = "outputs/racetrack-v0/eval_results/[R01_R02_R03_R04_R05_R06_R07_R08_DR01_DR02_DR03_DR04_DR05_DR06_DR07_DR08]_20260516_125952/data/all_results.pkl"
 
     # 🌟 图表标签与出图目录切换开关
     # True: 使用学术中文规范标签 (出图到 plots_academic_cn 目录)
@@ -1085,16 +1096,22 @@ if __name__ == "__main__":
             with open(LOAD_PKL_PATH, 'rb') as f:
                 all_results = pickle.load(f)
             
-            # 根据开关选择不同的出图子目录，防止互相覆盖
-            base_dir = os.path.dirname(os.path.dirname(LOAD_PKL_PATH))
-            plot_dir_name = "plots_academic_cn" if USE_ACADEMIC_LABELS else "plots_raw_tags"
-            plot_save_dir = os.path.join(base_dir, plot_dir_name)
-            data_save_dir = os.path.join(base_dir, "data")
-            os.makedirs(plot_save_dir, exist_ok=True)
+            # 💡 [核心新增] 基于当前未被注释的 models_to_evaluate 字典，对全量数据进行按需过滤
+            all_results = {k: v for k, v in all_results.items() if k in models_to_evaluate}
             
-            print(f"✅ 数据加载成功！共包含 {len(all_results)} 个模型的数据。正在重新绘制图表...")
-            save_metrics_to_csv(all_results, models_to_evaluate, save_dir=data_save_dir)
-            plot_comparisons(all_results, models_to_evaluate, save_dir=plot_save_dir)
-            print(f"🎨 所有图表已重新渲染并保存至: {plot_save_dir}")
+            if len(all_results) > 0:
+                # 根据开关选择不同的出图子目录，防止互相覆盖
+                base_dir = os.path.dirname(os.path.dirname(LOAD_PKL_PATH))
+                plot_dir_name = "plots_academic_cn" if USE_ACADEMIC_LABELS else "plots_raw_tags"
+                plot_save_dir = os.path.join(base_dir, plot_dir_name)
+                data_save_dir = os.path.join(base_dir, "data")
+                os.makedirs(plot_save_dir, exist_ok=True)
+                
+                print(f"✅ 数据过滤成功！已提取当前激活的 {len(all_results)} 个模型的数据。正在重新绘制图表...")
+                save_metrics_to_csv(all_results, models_to_evaluate, save_dir=data_save_dir)
+                plot_comparisons(all_results, models_to_evaluate, save_dir=plot_save_dir)
+                print(f"🎨 所有图表已重新渲染并保存至: {plot_save_dir}")
+            else:
+                print("❌ 过滤后没有任何模型数据！请检查您解除注释的模型 ID 是否存在于该 .pkl 文件中。")
         else:
             print(f"❌ 找不到指定的 .pkl 数据文件，请检查 LOAD_PKL_PATH 路径！")
