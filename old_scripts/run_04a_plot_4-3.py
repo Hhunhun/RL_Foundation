@@ -364,7 +364,7 @@ if __name__ == "__main__":
             # "DM02 微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM02_Micro_Q_...",
             # "DM03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM03_Standard_Q_...",
             # "DM04 强力干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM04_Strong_Q_...",
-            "SAC 保守基线 (M04)": f"outputs/{TARGET_ENV}/logs/SAC_M04_Safety_First_20260420_170911",
+            "SAC 保守基线 (M05)": f"outputs/{TARGET_ENV}/logs/SAC_M05_Patient_Merger_20260420_220108",
             "Diff-SAC 纯BC消融 (DM01)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM01_Pure_BC_20260511_135709",
             "Diff-SAC 终极SOTA (DM06)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844",
         }
@@ -435,13 +435,15 @@ if __name__ == "__main__":
     # 格式: 分环境独立配置，方便针对三大环境设置不同的截断
     CUSTOM_AXES_LIMITS = {
         "merge-v0": {
-            "全局环境交互奖励": {"xlim": None, "ylim": None},  
+            # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。例如 xlim: (0, 100000), ylim: (10, 35)
+            "全局环境交互奖励": {"xlim": (0, 100000), "ylim": (0, 160)},  
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 110)},  
             "回合步数": {"xlim": None, "ylim": (0, 110)},      
             "Q值评估": {"xlim": None, "ylim": (0, None)},          
         },
         "racetrack-v0": {
+            # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。
             "全局环境交互奖励": {"xlim": None, "ylim": None},  
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 550)},  
@@ -449,6 +451,7 @@ if __name__ == "__main__":
             "Q值评估": {"xlim": None, "ylim": (0, None)},          
         },
         "highway-v0": {
+            # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。
             "全局环境交互奖励": {"xlim": None, "ylim": None},  
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 250)}, 
@@ -471,9 +474,9 @@ if __name__ == "__main__":
     save_directory = os.path.join(PROJECT_ROOT, "old_scripts", "output_plot", "plot4-3", folder_name)
 
     print("\n[1/2] 正在绘制各模型原生训练曲线...")
-    plot_training_curves(models_to_plot, save_directory, raw_tags_to_plot, smooth_weight=0.98, align_to_env_steps=False, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
+    plot_training_curves(models_to_plot, save_directory, raw_tags_to_plot, smooth_weight=0.989, align_to_env_steps=False, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
     
     print("\n[2/2] 正在绘制 SAC 与 Diff-SAC 统一 X 轴的时空对齐对比曲线...")
-    plot_training_curves(models_to_plot, save_directory, aligned_tags_to_plot, smooth_weight=0.98, align_to_env_steps=True, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
+    plot_training_curves(models_to_plot, save_directory, aligned_tags_to_plot, smooth_weight=0.989, align_to_env_steps=True, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
     
     print(f"\n📈 所有原生及对齐对比图表已保存至: {save_directory}")
