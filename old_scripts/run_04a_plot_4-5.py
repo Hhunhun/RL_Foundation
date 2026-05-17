@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, MultipleLocator
 from datetime import datetime
 import warnings
 import pickle
@@ -360,277 +360,30 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         plt.close()
 
     # ----------------------------------------------------
-    # 图 1：累计奖励箱线图 (已由图05雨云图上位替代，故屏蔽)
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 01 视觉配置] 个性化调节箱线图的通透感
-    PLOT01_STYLE = {'alpha': 0.40}
-    
-    plt.figure(figsize=(8.0, 6.0)) # 放大画幅，保持 4:3 比例，使 12 号字体显示更舒展
-    reward_data = [all_results[mid]['raw_rewards'] for mid in model_ids]
-    
-    # 美学升级：使用实体填充的箱线图，定制均值点和中位数线
-    bplot = plt.boxplot(reward_data, labels=display_labels, showmeans=True, showfliers=False, patch_artist=True,
-                        boxprops=dict(color='black', linewidth=1.2),
-                        capprops=dict(color='black', linewidth=1.2),
-                        whiskerprops=dict(color='black', linewidth=1.2),
-                        medianprops=dict(color='firebrick', linewidth=2.0),
-                        meanprops=dict(marker='^', markeredgecolor='green', markerfacecolor='green', markersize=8))
-    
-    # 为每个箱体填上对应的调色盘颜色
-    for patch, color in zip(bplot['boxes'], colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(PLOT01_STYLE['alpha']) # 独立控制的通透感
-        
-    plt.title('规控策略演进与消融实验对比')
-    plt.ylabel('回合累计奖励')
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.5)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    # 🆕 新增：在绿色均值三角形旁边标注具体的数值
-    means = [all_results[m]['mean_reward'] for m in model_ids]
-    for i, mean_val in enumerate(means): # 这里的 models 应该改为 model_ids
-        # i + 1 是因为 boxplot 的 x 轴刻度是从 1 开始的
-        plt.text(i + 1.05, mean_val, f'{mean_val:.1f}', va='center', ha='left',
-                 color='green', fontsize=10, fontweight='bold')
-
-    _save_and_close_fig('01_reward_boxplot')
-    """
-
-    # ----------------------------------------------------
-    # 🆕 图 2：策略方差/标准差柱状图 (由变异系数CV上位替代，故屏蔽)
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 02 视觉配置] 个性化调节柱状图的通透感与边框粗细
-    PLOT02_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    std_rewards = [all_results[m]['std_reward'] for m in model_ids]
-    bars_std = plt.bar(display_labels, std_rewards, color=colors, alpha=PLOT02_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02_STYLE['linewidth'])
-    plt.title('规控策略稳定性对比')
-    plt.ylabel('奖励标准差')
-    
-    # [自适应 Y 轴] 顶部预留 15% 的动态空间，确保文本绝对不会出界
-    max_std = max(std_rewards) if len(std_rewards) > 0 else 1.0
-    plt.ylim(0, max_std * 1.15)
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.4)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    # 在柱子上标注具体数字
-    for bar in bars_std:
-        yval = bar.get_height()
-        # 文本高度偏移也改为图表量级的 2%，实现动态自适应
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_std * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10)
-
-    _save_and_close_fig('02_reward_variance_bar')
-    """
-
-    # ----------------------------------------------------
-    # 图 3：存活率柱状图
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 03 视觉配置]
-    PLOT03_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
-    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=PLOT03_STYLE['alpha'], edgecolor=colors, linewidth=PLOT03_STYLE['linewidth'])
-    plt.title('规控策略存活率对比')
-    plt.ylabel('存活率 (%)')
-    plt.ylim(0, 110) # 扩大顶部留白，防止 100.0% 标签被切角
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.4)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    # 在柱子上标注具体数字
-    for bar in bars_surv:
-        yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + 1.5, f'{yval:.1f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
-
-    _save_and_close_fig('03_survival_rate_bar')
-    """
-
-    # ----------------------------------------------------
-    # 🆕 图 4：平均纵向速度柱状图 (修复自适应 Y 轴)
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 04 视觉配置]
-    PLOT04_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
-    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=PLOT04_STYLE['alpha'], edgecolor=colors, linewidth=PLOT04_STYLE['linewidth'])
-    plt.title('平均纵向速度对比')
-    plt.ylabel('平均纵向速度 (m/s)')
-
-    # [重构自适应缩放] 根据数据的真实极差动态计算缩放边界，确保完美居中且不过度裁剪
-    min_speed = min(mean_speeds) if len(mean_speeds) > 0 else 0.0
-    max_speed = max(mean_speeds) if len(mean_speeds) > 0 else 1.0
-    y_range = max_speed - min_speed
-    margin = y_range * 0.15 if y_range > 0 else max_speed * 0.15
-    
-    y_min = max(0.0, min_speed - margin - 1.0)
-    y_max = max_speed + margin + 1.0
-    plt.ylim(y_min, y_max)
-
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.4)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    # 在柱子上标注具体数字
-    for bar in bars_speed:
-        yval = bar.get_height()
-        # 文本高度也根据动态域按比例抬升
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + (y_max - y_min) * 0.02, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
-
-    _save_and_close_fig('04_mean_speed_bar')
-    """
-
-    # ====================================================
-    # 🚀 [新增] 破局方差陷阱：四种替代维度的稳定性评估图表
-    # ====================================================
-
-    # ----------------------------------------------------
-    # 方案 A：图 02a 变异系数对比 (Coefficient of Variation)
-    # 衡量单位收益下的相对波动风险，消除高分基数带来的绝对方差惩罚
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 02a 视觉配置]
-    PLOT02A_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    cvs = [all_results[m]['cv'] for m in model_ids]
-    bars_cv = plt.bar(display_labels, cvs, color=colors, alpha=PLOT02A_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02A_STYLE['linewidth'])
-    plt.title('规控策略相对波动对比')
-    plt.ylabel('变异系数')
-
-    max_cv = max(cvs) if len(cvs) > 0 else 1.0
-    plt.ylim(0, max_cv * 1.15)
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.5)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    for bar in bars_cv:
-        yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_cv * 0.02, f'{yval:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    _save_and_close_fig('02a_cv_bar')
-    """
-
-    # ----------------------------------------------------
-    # 方案 B：图 02b 回合间波动率对比 (信息冗余，故屏蔽)
-    # 计算相邻回合之间的奖励跳跃幅度，衡量模型在不同随机路况下的表现平滑度
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 02b 视觉配置]
-    PLOT02B_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    volatilities = [np.std(np.diff(all_results[m]['raw_rewards'])) if len(all_results[m]['raw_rewards']) > 1 else 0.0 for m in model_ids]
-    bars_vol = plt.bar(display_labels, volatilities, color=colors, alpha=PLOT02B_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02B_STYLE['linewidth'])
-    plt.title('测试路况适应稳定性')
-    plt.ylabel('相邻回合奖励差值的标准差')
-
-    max_vol = max(volatilities) if len(volatilities) > 0 else 1.0
-    plt.ylim(0, max_vol * 1.15)
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.5)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    for bar in bars_vol:
-        yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_vol * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    _save_and_close_fig('02b_eval_volatility_bar')
-    """
-
-    # ----------------------------------------------------
-    # 方案 C：图 02c 完赛局条件方差 (信息冗余，故屏蔽)
-    # 剔除撞车 (0分) 带来的极大两极分化，专门考察神仙局的发挥是否稳定
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 02c 视觉配置]
-    PLOT02C_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    cond_stds = []
-    for m in model_ids:
-        rewards = np.array(all_results[m]['raw_rewards'])
-        is_crashed = all_results[m]['is_crashed']
-        success_rewards = rewards[~is_crashed] # 仅保留没撞车的回合
-        cond_stds.append(np.std(success_rewards) if len(success_rewards) > 0 else 0.0)
-        
-    bars_cond = plt.bar(display_labels, cond_stds, color=colors, alpha=PLOT02C_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02C_STYLE['linewidth'])
-    plt.title('完赛局内表现稳定性')
-    plt.ylabel('完赛局奖励标准差')
-
-    max_cond = max(cond_stds) if len(cond_stds) > 0 else 1.0
-    plt.ylim(0, max_cond * 1.15)
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.5)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    for bar in bars_cond:
-        yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_cond * 0.02, f'{yval:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    _save_and_close_fig('02c_conditional_std_bar')
-    """
-
-    # ----------------------------------------------------
-    # 方案 D：图 02d 动作平滑度方差 (Action Jerk Variance)
-    # 深度扣题“扩散模型平滑噪声”：计算方向盘和油门在时间步上的抖动烈度
-    # ----------------------------------------------------
-    """
-    # 🎨 [图 02d 视觉配置]
-    PLOT02D_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
-    
-    plt.figure(figsize=(8.0, 6.0))
-    jerk_stds = [all_results[m]['action_jerk_std'] for m in model_ids]
-    bars_jerk = plt.bar(display_labels, jerk_stds, color=colors, alpha=PLOT02D_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02D_STYLE['linewidth'])
-    plt.title('物理动作平滑度对比')
-    plt.ylabel('动作变化量的平均标准差')
-
-    max_jerk = max(jerk_stds) if len(jerk_stds) > 0 else 1.0
-    plt.ylim(0, max_jerk * 1.15)
-    plt.xticks(rotation=25, ha='right')
-    plt.grid(axis='y', linestyle='--', alpha=0.5)
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-
-    for bar in bars_jerk:
-        yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_jerk * 0.02, f'{yval:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    _save_and_close_fig('02d_action_jerk_std_bar')
-    """
-
-    # ====================================================
-    # 🌟 [高级可视化方案] 针对论文的高信息密度图表 05 ~ 07 (原 08 ~ 10)
-    # ==========================================
-
-    # ----------------------------------------------------
-    # 🆕 图 05：累计奖励雨云图 (Raincloud Plot) 
+    # 图 05：累计奖励雨云图
     # 结合了散点、箱线和半小提琴图，是展示核密度与真实数据分布的终极形态
     # ----------------------------------------------------
     # 🎨 [视觉精修配置区] 独立解耦四大元素的视觉参数，随心所欲定制您的完美图表
-    CLOUD_STYLE     = {'alpha': 0.40, 'linewidth': 1.0}                     # 云朵(KDE): 追求轻盈、通透、边界柔和
-    RAIN_STYLE      = {'alpha': 0.35, 'size': 3.0, 'jitter': 0.2}          # 雨滴(散点): 追求粒粒分明、错落有致
+    # 👉 间距调节核心区：通过改变这几个数值，控制云、箱、雨的三层分离！
+    CLOUD_STYLE     = {'alpha': 0.40, 'linewidth': 1.0, 'width': 0.6}        # 云朵(KDE): width 控制云朵向上延展的最大厚度
+    RAIN_STYLE      = {'alpha': 0.35, 'size': 3.0, 'jitter': 0.08, 'move': 0.25} # 雨滴(散点): move 控制散点往下平移的距离；jitter 控制雨滴上下散开的宽度
     
     # 🛠️ [箱线图(伞)参数调节区] 
     UMBRELLA_STYLE  = {
-        'alpha': 0.80,       # 箱体填充的透明度 (0.0 完全透明 ~ 1.0 完全不透明)
+        'alpha': 0.85,       # 箱体(包括伞面、边框、伞骨)的透明度，可单独与云层分离调节
         'linewidth': 1.5,    # 箱线图边框、中位数线、上下四分位须线的粗细
-        'width': 0.3,       # 箱线图的整体高度/胖瘦 (太大会挡住雨滴，太小看不清)
-        'edgecolor': 'black' # 边框和线条的颜色
+        'width': 0.15,       # 箱线图的整体高度/胖瘦 (居中显示，已调小至 0.15 避免与雨滴重叠)
+        'match_cloud': True, # 👉 是否强制伞的颜色(边框+骨)与对应的云朵保持完全一致
+        'fallback_edgecolor': 'black', # 若上一项为 False 时使用的边框颜色
+        'fill_face': False   # 👉 [新增] 是否在箱框内部填充颜色，设为 False 则彻底透明(中空)
     }
-    LIGHTNING_STYLE = {'alpha': 1.00, 'size': 60, 'linewidth': 1.2, 'y_offset': 0.15, 'color': 'gold', 'edgecolor': 'black'} # 闪电(均值): 视觉焦点，绝对清晰
+    LIGHTNING_STYLE = {'alpha': 1.00, 'size': 60, 'linewidth': 1.2, 'y_offset': 0.0, 'color': 'gold', 'edgecolor': 'black'} # 闪电(均值): y_offset=0 使其完美镶嵌在箱线图中心
     
     # 🛠️ [坐标轴与外框调节区]
     AXES_STYLE      = {
-        'title_pad': 15, 'grid_alpha': 0.4, 'spine_width': 1.2, 'spine_color': 'black',
-        'x_range': None      # [横坐标范围调节]: 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
+        'grid_alpha': 0.4, 'spine_width': 1.2, 'spine_color': 'black',
+        'x_range': (40.0, 55.0),         # 👉 [接口: X轴显示范围] 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
+        'x_ticks_step': None     # 👉 [核心修复] 设为 None 自动分5格。防止在高速等大奖励区间时，刻度过于密集导致被系统强制隐藏
     }
     
     plt.figure(figsize=(12.0, 8.0)) 
@@ -655,8 +408,8 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
                  palette=colors, orient='h', ax=plt.gca(),
                  order=display_labels,         # 【核心修复】强制锁定渲染顺序，保障与后续均值对齐
                  point_size=RAIN_STYLE['size'], 
-                 width_viol=0.6, width_box=UMBRELLA_STYLE['width'],
-                 bw=0.2, dodge=False, pointplot=False, move=0.2,
+                 width_viol=CLOUD_STYLE['width'], width_box=UMBRELLA_STYLE['width'],
+                 bw=0.2, dodge=False, pointplot=False, move=RAIN_STYLE['move'],
                  jitter=RAIN_STYLE['jitter'], cut=2) 
                  
     ax = plt.gca()
@@ -674,9 +427,20 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
             # [定制雨滴] 散点集合
             collection.set_alpha(RAIN_STYLE['alpha'])
             
-    for patch in ax.patches:
+    # [核心修复] 先安全地提取所有箱体的原生底色（此时它们天然带有seaborn赋予的、与云绝对一致的调色盘颜色）
+    original_patch_colors = [patch.get_facecolor() for patch in ax.patches]
+    
+    for i, patch in enumerate(ax.patches):
+        base_color = original_patch_colors[i] if i < len(original_patch_colors) else 'black'
+        target_color = base_color if UMBRELLA_STYLE.get('match_cloud', True) else UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
+        
         # [定制伞面] 四分位距箱体
-        patch.set_edgecolor(UMBRELLA_STYLE['edgecolor'])
+        if UMBRELLA_STYLE.get('fill_face', False):
+            patch.set_facecolor(target_color)
+        else:
+            patch.set_facecolor('none') # 强制内部透明 (中空)
+            
+        patch.set_edgecolor(target_color)
         patch.set_linewidth(UMBRELLA_STYLE['linewidth'])
         patch.set_alpha(UMBRELLA_STYLE['alpha'])
         patch.set_zorder(5)
@@ -685,10 +449,35 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         # [隐藏异常值] 箱线图自带的异常值点是带有 marker 的线条，直接将其强制隐形，防止与雨滴散点叠印
         if line.get_marker() not in ['None', ' ', '', None]:
             line.set_visible(False)
-            continue
             
+    # 过滤出伞骨有效线条，采用绝对空间坐标匹配，彻底解决 Seaborn 底层线段乱序的 Bug
+    valid_lines = [line for line in ax.lines if line.get_visible()]
+    
+    # 提取所有箱体的物理 Y 轴中心坐标
+    box_y_centers = []
+    for patch in ax.patches:
+        if hasattr(patch, 'get_y') and hasattr(patch, 'get_height'):
+            box_y_centers.append(patch.get_y() + patch.get_height() / 2)
+        else:
+            # 兼容高版本 Seaborn/Matplotlib 中箱体变为 PathPatch 的情况
+            bbox = patch.get_path().get_extents()
+            box_y_centers.append((bbox.y0 + bbox.y1) / 2)
+    
+    for line in valid_lines:
+        # 计算当前线条的 Y 轴物理中心点
+        line_y_center = np.mean(line.get_ydata())
+        
+        # 找到在空间上最贴近的箱体索引
+        if len(box_y_centers) > 0:
+            patch_idx = np.argmin([abs(line_y_center - bc) for bc in box_y_centers])
+            base_color = original_patch_colors[patch_idx]
+        else:
+            base_color = UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
+            
+        target_color = base_color if UMBRELLA_STYLE.get('match_cloud', True) else UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
+        
         # [定制伞骨] 中位数与极值虚线
-        line.set_color(UMBRELLA_STYLE['edgecolor'])
+        line.set_color(target_color)
         line.set_linewidth(UMBRELLA_STYLE['linewidth'])
         line.set_alpha(UMBRELLA_STYLE['alpha'])
         line.set_zorder(5)
@@ -703,11 +492,16 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
                s=LIGHTNING_STYLE['size'], alpha=LIGHTNING_STYLE['alpha'], zorder=10)
                 
     # 5. [定制坐标与外框]
-    plt.title('规控策略奖励双峰分布雨云图', pad=AXES_STYLE['title_pad'])
+    # plt.title('规控策略奖励双峰分布雨云图', pad=AXES_STYLE['title_pad']) # 已应要求移除大标题
     plt.xlabel('回合累计奖励')
     plt.ylabel('')
     plt.grid(axis='x', linestyle='--', alpha=AXES_STYLE['grid_alpha'])
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    
+    # 🛠️ [横坐标刻度步长应用]
+    if AXES_STYLE.get('x_ticks_step') is not None:
+        ax.xaxis.set_major_locator(MultipleLocator(AXES_STYLE['x_ticks_step']))
+    else:
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     
     # 🛠️ [横坐标范围应用]
     if AXES_STYLE['x_range'] is not None:
@@ -717,268 +511,16 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         spine.set_visible(True)
         spine.set_color(AXES_STYLE['spine_color'])
         spine.set_linewidth(AXES_STYLE['spine_width'])
+        
+    # 强制显示被 seaborn 隐藏的物理刻度短线与文字，支持 which='both' 贯穿主副刻度
+    ax.tick_params(axis='x', which='both', bottom=False, labelbottom=True, direction='in', length=0, width=AXES_STYLE['spine_width'], color=AXES_STYLE['spine_color'])
+    ax.tick_params(axis='y', which='both', left=True, labelleft=True, direction='in', length=0, width=AXES_STYLE['spine_width'], color=AXES_STYLE['spine_color'])
+    
+    # [兜底保障] 强制唤醒所有 X 轴的刻度文本对象
+    for label in ax.get_xticklabels():
+        label.set_visible(True)
     
     _save_and_close_fig('05_reward_raincloud')
-
-    # ----------------------------------------------------
-    # 🆕 图 06：气泡散点帕累托前沿图 (Bubble Scatter / Pareto Front)
-    # X轴: 安全性(存活率) | Y轴: 收益(平均奖励) | 气泡大小: 效率(平均速度)
-    # 直观展示传统模型与 Diff-SAC 混合专家在“安全-收益”权衡上的站位
-    # ----------------------------------------------------
-    """
-    plt.figure(figsize=(9.0, 7.0))
-    mean_rewards = [all_results[m]['mean_reward'] for m in model_ids]
-    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
-    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
-    
-    # 气泡大小映射：放大速度差异以增强视觉冲击力
-    max_speed_val = max(mean_speeds) if len(mean_speeds) > 0 else 1.0
-    sizes = [max(20, (s / max_speed_val) ** 2 * 600) for s in mean_speeds]
-    
-    plt.scatter(survival_rates, mean_rewards, s=sizes, c=colors, alpha=0.75, edgecolors='black', linewidth=1.5)
-    
-    # 为每个气泡添加文本标注
-    for i, txt in enumerate(display_labels):
-        plt.annotate(txt, (survival_rates[i], mean_rewards[i]), 
-                     xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', fontsize=10, fontweight='bold')
-                     
-    plt.title('安全-收益帕累托前沿与均速气泡图')
-    plt.xlabel('存活率 (%) [越靠右越安全]')
-    plt.ylabel('平均累计奖励 [越靠上收益越高]')
-    plt.grid(linestyle='--', alpha=0.5)
-    
-    # 自适应扩展画幅，防止文本和气泡被边界裁切
-    plt.xlim(max(0, min(survival_rates) - 15), min(105, max(survival_rates) + 15))
-    y_range = max(mean_rewards) - min(mean_rewards) if max(mean_rewards) != min(mean_rewards) else 10
-    plt.ylim(min(mean_rewards) - y_range * 0.15, max(mean_rewards) + y_range * 0.25)
-    plt.gca().xaxis.set_major_locator(MaxNLocator(nbins=5))
-    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
-    
-    _save_and_close_fig('06_pareto_bubble_scatter')
-    """
-
-    # ----------------------------------------------------
-    # 🆕 图 07：学术级五维雷达图 (Radar Chart)
-    # 包含任务效能、安全保障、通行效率、策略稳定性、控制平顺性
-    # ----------------------------------------------------
-    """
-    metrics_names = ['任务效能', '安全保障', '通行效率', '策略稳定性', '控制平顺性']
-    num_vars = len(metrics_names)
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1] # 闭合雷达圈
-    
-    def normalize_positive(arr):
-        min_v, max_v = min(arr), max(arr)
-        return [0.2 + 0.8 * (x - min_v) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
-        
-    def normalize_negative(arr):
-        min_v, max_v = min(arr), max(arr)
-        return [0.2 + 0.8 * (max_v - x) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
-        
-    # 1. 抽取并计算各个原始维度数据
-    mean_rewards = [all_results[m]['mean_reward'] for m in model_ids]
-    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
-    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
-    cvs = [all_results[m]['cv'] for m in model_ids]
-    jerk_stds = [all_results[m]['action_jerk_std'] for m in model_ids]
-            
-    # 2. 严格执行 Min-Max 归一化逻辑
-    norm_rewards = normalize_positive(mean_rewards)
-    norm_survivals = normalize_positive(survival_rates)
-    norm_speeds = normalize_positive(mean_speeds)
-    norm_cvs = normalize_negative(cvs)
-    norm_jerks = normalize_negative(jerk_stds)
-    
-    fig, ax = plt.subplots(figsize=(8.0, 8.0), subplot_kw=dict(polar=True))
-    
-    # 3. 清理坐标系底层杂质，重构纯净版多边形网格
-    ax.spines['polar'].set_visible(False)
-    ax.yaxis.grid(False)
-    ax.xaxis.grid(False)
-    
-    # 绘制正五边形刻度围栏
-    for level in [0.2, 0.4, 0.6, 0.8, 1.0]:
-        grid_values = [level] * num_vars
-        grid_values += grid_values[:1]
-        ax.plot(angles, grid_values, color='gray', linestyle='--', linewidth=0.8, alpha=0.5, zorder=0)
-        
-    # 绘制中心到顶点的骨架射线
-    for angle in angles[:-1]:
-        ax.plot([angle, angle], [0, 1.0], color='gray', linestyle='-', linewidth=0.8, alpha=0.5, zorder=0)
-
-    # 4. 铺设模型评估轨迹层
-    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
-        values = [norm_rewards[i], norm_survivals[i], norm_speeds[i], norm_cvs[i], norm_jerks[i]]
-        values += values[:1]
-        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label,
-                marker='o', markersize=6, markeredgecolor='white', zorder=2)
-        ax.fill(angles, values, color=color, alpha=0.15, zorder=1)
-        
-    ax.set_theta_offset(np.pi / 2) # 从正上方起针
-    ax.set_theta_direction(-1) # 顺时针渲染
-    ax.set_thetagrids(np.degrees(angles[:-1]), metrics_names, fontsize=12, fontweight='bold')
-    ax.set_ylim(0, 1.05)
-    
-    # 精准设置向上的单一主轴刻度标签
-    ax.set_rlabel_position(0)
-    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
-    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], color='dimgray', fontsize=10)
-    
-    plt.title('五维综合性能雷达图', y=1.08)
-    plt.legend(loc='upper right', bbox_to_anchor=(1.35, 1.1))
-    
-    _save_and_close_fig('07_performance_radar')
-    """
-
-    # ====================================================
-    # 🌟 [动作分布] 针对动作流形的网格可视化图表 08 ~ 10 (原 05 ~ 07)
-    # ==========================================
-
-    # ----------------------------------------------------
-    # [准备子图布局] 动态计算最优网格排列 (如 1x3, 2x2, 2x3, 2x4)
-    # ----------------------------------------------------
-    n_models = len(model_ids)
-    if n_models <= 3:
-        nrows, ncols = 1, max(1, n_models)
-    elif n_models == 4:
-        nrows, ncols = 2, 2
-    elif n_models in [5, 6]:
-        nrows, ncols = 2, 3
-    else:
-        ncols = 4
-        nrows = int(np.ceil(n_models / ncols))
-        
-    subplot_width = 4.0
-    subplot_height = 4.0
-    
-    # ----------------------------------------------------
-    # 图 08：动作分布 - 极小散点网格图 (被 KDE 图替代，故屏蔽)
-    # ----------------------------------------------------
-    """
-    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
-    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
-    
-    for i in range(nrows * ncols):
-        ax = axes_flat[i]
-        if i < n_models:
-            mid = model_ids[i]
-            color = colors[i]
-            label = display_labels[i]
-            
-            actions = all_results[mid].get('actions', np.array([]))
-            if len(actions) > 0:
-                actions = actions.reshape(actions.shape[0], -1)
-                if actions.shape[1] >= 2:
-                    # 策略：极小 Size + 极低 Alpha
-                    ax.scatter(actions[:, 1], actions[:, 0], color=color, alpha=0.2, s=10, edgecolors='none')
-                    
-            ax.set_title(label, color=color, fontweight='bold')
-            if i % ncols == 0:
-                ax.set_ylabel('纵向控制 / 加减速')
-            # 处于最底层，或者正下方是空位的图表，强制显示 X 轴标签和刻度
-            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
-                ax.set_xlabel('横向控制 / 转向')
-                ax.xaxis.set_tick_params(labelbottom=True)
-                
-            ax.set_xlim(-1.05, 1.05)
-            ax.set_ylim(-1.05, 1.05)
-            ax.grid(True, linestyle='--', alpha=0.5)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
-        else:
-            ax.axis('off')
-            
-    _save_and_close_fig('08_action_scatter_grid')
-    """
-
-    # ----------------------------------------------------
-    # 图 09：动作分布 - 核密度分布网格图 (KDE Grid)
-    # ----------------------------------------------------
-    """
-    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
-    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
-    
-    for i in range(nrows * ncols):
-        ax = axes_flat[i]
-        if i < n_models:
-            mid = model_ids[i]
-            color = colors[i]
-            label = display_labels[i]
-            
-            actions = all_results[mid].get('actions', np.array([]))
-            if len(actions) > 0:
-                actions = actions.reshape(actions.shape[0], -1)
-                if actions.shape[1] >= 2:
-                    x_plot, y_plot = actions[:, 1], actions[:, 0]
-                    # 防止数万点导致 KDE 渲染卡死，限流下采样
-                    if len(x_plot) > 10000:
-                        idx = np.random.choice(len(x_plot), 10000, replace=False)
-                        x_plot, y_plot = x_plot[idx], y_plot[idx]
-                        
-                    try:
-                        # fill=True: 绘制如热力图般渐变的实心分布区域；thresh=0.05: 隐藏边缘极低密度的孤点
-                        sns.kdeplot(x=x_plot + np.random.normal(0, 1e-5, size=x_plot.shape), 
-                                    y=y_plot + np.random.normal(0, 1e-5, size=y_plot.shape), 
-                                    color=color, fill=True, alpha=0.8, thresh=0.05, levels=10, ax=ax)
-                    except Exception:
-                        pass
-                    
-            ax.set_title(label, color=color, fontweight='bold')
-            if i % ncols == 0:
-                ax.set_ylabel('纵向控制 / 加减速')
-            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
-                ax.set_xlabel('横向控制 / 转向')
-                ax.xaxis.set_tick_params(labelbottom=True)
-                
-            ax.set_xlim(-1.05, 1.05)
-            ax.set_ylim(-1.05, 1.05)
-            ax.grid(True, linestyle='--', alpha=0.5)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
-        else:
-            ax.axis('off')
-            
-    _save_and_close_fig('09_action_kde_grid')
-    """
-
-    # ----------------------------------------------------
-    # 图 10：动作分布 - 六边形分箱网格图 (与 KDE 作用重复，故屏蔽)
-    # ----------------------------------------------------
-    """
-    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
-    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
-    
-    for i in range(nrows * ncols):
-        ax = axes_flat[i]
-        if i < n_models:
-            mid = model_ids[i]
-            color = colors[i]
-            label = display_labels[i]
-            
-            actions = all_results[mid].get('actions', np.array([]))
-            if len(actions) > 0:
-                actions = actions.reshape(actions.shape[0], -1)
-                if actions.shape[1] >= 2:
-                    # gridsize 控制蜂窝细度，mincnt=1 去除空白区域，cmap 选用美观的深海/火箭色系
-                    ax.hexbin(actions[:, 1], actions[:, 0], gridsize=30, cmap='mako_r', mincnt=1, alpha=0.9)
-                    
-            ax.set_title(label, color=color, fontweight='bold')
-            if i % ncols == 0:
-                ax.set_ylabel('纵向控制 / 加减速')
-            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
-                ax.set_xlabel('横向控制 / 转向')
-                ax.xaxis.set_tick_params(labelbottom=True)
-                
-            ax.set_xlim(-1.05, 1.05)
-            ax.set_ylim(-1.05, 1.05)
-            ax.grid(True, linestyle='--', alpha=0.5)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
-        else:
-            ax.axis('off')
-            
-    _save_and_close_fig('10_action_hexbin_grid')
-    """
 
     print(f"📈 精简后的核心对比图表已全部保存至: {os.path.abspath(save_dir)}")
 
