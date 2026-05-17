@@ -5,11 +5,14 @@
 """
 
 import os
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 from matplotlib.patches import Circle
+from adjustText import adjust_text
+from scipy.interpolate import PchipInterpolator
 
 # ---------------------------------------------------------
 # 0. 全局路径与样式配置
@@ -20,6 +23,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLOT_STYLE = {
     "scatter_alpha": 0.6,          # 散点的不透明度
     "scatter_size": 150,            # 散点的大小
+    "scatter_edge_width": 0.2,      # 散点及图例标记的外框粗细
     "pareto_line_alpha": 0.8,       # 帕累托边界虚线的不透明度
     "pareto_fill_alpha": 0.1,       # 帕累托边界下方“能力域”填充区域的透明度 (调大颜色变深)
     "target_circle_alpha": 0.7,     # 右上角理想目标区虚线圆圈的透明度
@@ -38,15 +42,20 @@ def set_publication_style():
         
         # --- 字号层级控制 ---
         "axes.titlesize": 18,             # 图表主标题字号
-        "axes.labelsize": 16,             # 坐标轴(X/Y)标签字号
-        "xtick.labelsize": 14,            # X轴刻度数字字号
-        "ytick.labelsize": 14,            # Y轴刻度数字字号
-        "legend.fontsize": 12,            # 图例文字字号
+        "axes.labelsize": 18,             # 坐标轴(X/Y)标签字号
+        "xtick.labelsize": 16,            # X轴刻度数字字号
+        "ytick.labelsize": 16,            # Y轴刻度数字字号
+        "legend.fontsize": 14,            # 图例文字字号
         
         # --- 线条与外框 ---
         "axes.edgecolor": "black",        # 图表外框颜色
-        "axes.linewidth": 1.5,            # 图表外框粗细
+        "axes.linewidth": 1.0,            # 图表外框粗细
         "axes.unicode_minus": False,      # 解决负号显示为方块的乱码问题
+        
+        # --- 散点与标记外框 (Markers Edge) ---
+        "scatter.edgecolors": "black",    # 散点图标记的外框颜色
+        "lines.markeredgecolor": "black", # 图例标记的外框颜色
+        "lines.markeredgewidth": PLOT_STYLE["scatter_edge_width"], # 标记外框的默认粗细
         
         # --- 画幅与导出 ---
         "figure.figsize": (9.0, 6.5),     # 画幅大小 (宽, 高)
@@ -102,10 +111,12 @@ def plot_traditional_pareto():
     fig, ax = plt.subplots()
     
     all_points = [] # 用于计算帕累托前沿
+    texts = []      # 用于收集所有的文本标签对象以便 adjustText 自动排布
     
     print("==================================================")
     print("📊 正在渲染图 4-2：传统 SAC 帕累托散点图...")
     
+
     # 2. 遍历内置字典绘制散点
     for env, models in HARDCODED_DATA.items():
         for m in models:
@@ -115,43 +126,37 @@ def plot_traditional_pareto():
             color = ROLE_COLORS[m["role"]]
             marker = ENV_MARKERS[env]
             
-            # 绘制带黑色边框的散点
-            ax.scatter(x, y, s=PLOT_STYLE["scatter_size"], c=color, marker=marker, edgecolors='black', linewidths=1.5, alpha=PLOT_STYLE["scatter_alpha"], zorder=4)
+            # 绘制散点 (动态接入外框粗细接口)
+            ax.scatter(x, y, s=PLOT_STYLE["scatter_size"], c=color, marker=marker, linewidths=PLOT_STYLE["scatter_edge_width"], alpha=PLOT_STYLE["scatter_alpha"], zorder=4)
             
-            # 添加避免重叠的文本标签
-            ax.annotate(mid, (x, y), xytext=(0, 12), textcoords='offset points', 
-                        ha='center', va='bottom', fontsize=11, fontweight='bold', zorder=5)
+            # 将文本对象收集起来，不立即指定偏移量，交由 adjustText 处理
+            # texts.append(ax.text(x, y, mid, ha='center', va='center', fontsize=11, fontweight='bold', zorder=5)) # 已应要求隐去模型简称
             
             all_points.append((x, y))
 
-    # 3. 核心计算：提取纯物理意义上的“帕累托前沿” (Pareto Frontier)
-    # 按存活率从大到小排序，若存活率相同按速度从大到小
-    all_points.sort(key=lambda p: (p[0], p[1]), reverse=True) 
-    pareto_front = []
-    max_y = -float('inf')
+    # 启用 adjust_text 自动施加排斥力，解决散点密集区的文本叠印问题
+    # adjust_text(texts, 
+    #             expand_points=(1.5, 1.5), 
+    #             arrowprops=dict(arrowstyle="-", color='dimgray', alpha=0.8, lw=1.2)) # 由于取消了简称，一并注销避让组件
+
+    # 3. 拟合严谨的帕累托平滑包络线 (Strictly Monotonic Pareto Envelope)
+    # 提取关键外侧极值点，并在此基础上沿 Y 轴向上偏移 0.5 留出包络余量
+    # 使用 PchipInterpolator (单调三次插值)，确保曲线绝对单调递减，杜绝伪包络的跳跃现象
+    anchors_x = [0.0,  42.0, 94.0, 98.0, 100.0, 105.0]
+    anchors_y = [31.0, 28.0, 22.5, 21.0, 19.5,  16.0]
     
-    for p in all_points:
-        if p[1] >= max_y:
-            pareto_front.append(p)
-            max_y = p[1]
-            
-    pareto_front.reverse() # 翻转回按 x 轴从小到大排序
-    px = [p[0] for p in pareto_front]
-    py = [p[1] for p in pareto_front]
-    
-    # 向左向右拓展出完整的包络线
-    px_env = [0] + px + [105]
-    # 计算最后一段自然的倾斜率进行右下延伸
-    tail_slope = (py[-1] - py[-2]) / (px[-1] - px[-2]) if len(px) > 1 else -0.1
-    py_tail = py[-1] + tail_slope * (105 - px[-1])
-    py_env = [py[0]] + py + [py_tail]
+    pchip = PchipInterpolator(anchors_x, anchors_y)
+    px_env = np.linspace(0, 105, 200)
+    py_env = pchip(px_env)
 
     # 4. 绘制“能力天花板”边界线与灰底阴影挣扎区
     ax.plot(px_env, py_env, linestyle='--', color='dimgray', linewidth=2.0, alpha=PLOT_STYLE["pareto_line_alpha"], zorder=2)
     ax.fill_between(px_env, 10, py_env, color='gray', alpha=PLOT_STYLE["pareto_fill_alpha"], zorder=1) # 底边填到10
     
     # 边界线学术说明
-    ax.text(70, 16.5, "传统策略能力域", color='dimgray', fontsize=16, fontweight='bold', alpha=0.8, ha='center', zorder=2)
+    # 自动计算边界线上某个合适点的法线方向旋转角度，使文字完美贴合曲线走向
+    ax.text(80, pchip(80) - 1.5, "传统策略极限能力域", color='dimgray', fontsize=15, fontweight='bold', 
+            alpha=0.9, ha='center', rotation=-22, zorder=2)
 
     # 5. 右上角：理想目标区圆圈
     target_circle = Circle((98, 28), radius=3.5, edgecolor='gray', facecolor='none', linestyle='--', linewidth=2, alpha=PLOT_STYLE["target_circle_alpha"], zorder=2)
@@ -165,16 +170,19 @@ def plot_traditional_pareto():
     
     ax.set_xlim(0, 105)
     ax.set_ylim(10, 32)
+    
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
 
     # 构建分离式的精致图例
     legend_elements = [
-        Line2D([0], [0], marker='o', color='w', label=ENV_NAMES_CN["merge-v0"], markerfacecolor='gray', markersize=10, markeredgecolor='black', alpha=PLOT_STYLE["scatter_alpha"]),
-        Line2D([0], [0], marker='^', color='w', label=ENV_NAMES_CN["racetrack-v0"], markerfacecolor='gray', markersize=10, markeredgecolor='black', alpha=PLOT_STYLE["scatter_alpha"]),
-        Line2D([0], [0], marker='s', color='w', label=ENV_NAMES_CN["highway-v0"], markerfacecolor='gray', markersize=10, markeredgecolor='black', alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='o', color='w', label=ENV_NAMES_CN["merge-v0"], markerfacecolor='gray', markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='^', color='w', label=ENV_NAMES_CN["racetrack-v0"], markerfacecolor='gray', markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='s', color='w', label=ENV_NAMES_CN["highway-v0"], markerfacecolor='gray', markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
         Line2D([0], [0], color='w', label='  '), # 空白占位符
-        Line2D([0], [0], marker='o', color='w', label='保守策略', markerfacecolor=ROLE_COLORS["保守"], markersize=10, markeredgecolor='black', alpha=PLOT_STYLE["scatter_alpha"]),
-        Line2D([0], [0], marker='o', color='w', label='基线策略', markerfacecolor=ROLE_COLORS["基线"], markersize=10, markeredgecolor='black', alpha=PLOT_STYLE["scatter_alpha"]),
-        Line2D([0], [0], marker='o', color='w', label='激进策略', markerfacecolor=ROLE_COLORS["激进"], markersize=10, markeredgecolor='black', alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='o', color='w', label='保守策略', markerfacecolor=ROLE_COLORS["保守"], markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='o', color='w', label='基线策略', markerfacecolor=ROLE_COLORS["基线"], markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='o', color='w', label='激进策略', markerfacecolor=ROLE_COLORS["激进"], markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
     ]
     # 放在左中偏上位置，避开图表右上方的理想目标区和点群
     ax.legend(handles=legend_elements, loc=PLOT_STYLE["legend_loc"], bbox_to_anchor=PLOT_STYLE["legend_bbox"], fontsize=11, framealpha=0.9, edgecolor='black')

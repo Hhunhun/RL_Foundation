@@ -178,7 +178,7 @@ def plot_pareto_dilemma():
     # ==========================================
     # 新增：将数据落盘为 CSV 并重新读取
     # ==========================================
-    out_dir = os.path.join(PROJECT_ROOT, "old_scripts", "output_plot", "plot4_2_doubleY")
+    out_dir = os.path.join(PROJECT_ROOT, "old_scripts", "output_plot", "plot4_1")
     os.makedirs(out_dir, exist_ok=True)
     csv_path = os.path.join(out_dir, "pareto_data.csv")
     
