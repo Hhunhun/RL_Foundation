@@ -58,8 +58,8 @@ def set_publication_style():
         
         # --- 轴与标签字号配置 ---
         "axes.titlesize": 18,             # 图表标题字号
-        "axes.labelsize": 16,             # 坐标轴标签字号
-        "xtick.labelsize": 16,            # X轴刻度字号
+        "axes.labelsize": 22,             # 坐标轴标签字号
+        "xtick.labelsize": 20,            # X轴刻度字号
         "ytick.labelsize": 16,            # Y轴刻度字号
         "legend.fontsize": 12,            # 图例字号 (如需使用图例)
         
@@ -338,9 +338,9 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     academic_colors = [
         "#8491B4", # 莫灰紫 (Slate Purple)
         "#E64B35", # 胭脂红 (Carmine Red)
-        "#91D1C2", # 薄荷青 (Mint)
-        "#4DBBD5", # 蔚蓝色 (Cerulean Blue)
         "#00A087", # 翠绿色 (Teal Green)
+        "#4DBBD5", # 蔚蓝色 (Cerulean Blue)
+        "#91D1C2", # 薄荷青 (Mint)
         "#3C5488", # 午夜蓝 (Midnight Blue)
         "#F39B7F", # 珊瑚粉 (Salmon Pink)
         "#DC0000", # 深红色 (Crimson)
@@ -365,24 +365,24 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # ----------------------------------------------------
     # 🎨 [视觉精修配置区] 独立解耦四大元素的视觉参数，随心所欲定制您的完美图表
     # 👉 间距调节核心区：通过改变这几个数值，控制云、箱、雨的三层分离！
-    CLOUD_STYLE     = {'alpha': 0.40, 'linewidth': 1.0, 'width': 0.6}        # 云朵(KDE): width 控制云朵向上延展的最大厚度
-    RAIN_STYLE      = {'alpha': 0.35, 'size': 3.0, 'jitter': 0.08, 'move': 0.25} # 雨滴(散点): move 控制散点往下平移的距离；jitter 控制雨滴上下散开的宽度
+    CLOUD_STYLE     = {'alpha': 0.40, 'linewidth': 1.0, 'width': 0.8, 'offset': 0.14} # 云朵(KDE): width 控制厚度，offset 控制云朵与伞的悬空距离 (调小即可拉近)
+    RAIN_STYLE      = {'alpha': 0.6, 'size': 4.0, 'jitter': 0.08, 'move': 0.25} # 雨滴(散点): move 控制散点往下平移的距离；jitter 控制雨滴上下散开的宽度
     
     # 🛠️ [箱线图(伞)参数调节区] 
     UMBRELLA_STYLE  = {
         'alpha': 0.85,       # 箱体(包括伞面、边框、伞骨)的透明度，可单独与云层分离调节
         'linewidth': 1.5,    # 箱线图边框、中位数线、上下四分位须线的粗细
         'width': 0.15,       # 箱线图的整体高度/胖瘦 (居中显示，已调小至 0.15 避免与雨滴重叠)
-        'match_cloud': True, # 👉 是否强制伞的颜色(边框+骨)与对应的云朵保持完全一致
-        'fallback_edgecolor': 'black', # 若上一项为 False 时使用的边框颜色
+        # 'match_cloud' 已弃用，伞的颜色现直接按顺序从 academic_colors 读取
+        'fallback_edgecolor': 'black', # 兜底边框颜色
         'fill_face': False   # 👉 [新增] 是否在箱框内部填充颜色，设为 False 则彻底透明(中空)
     }
-    LIGHTNING_STYLE = {'alpha': 1.00, 'size': 60, 'linewidth': 1.2, 'y_offset': 0.0, 'color': 'gold', 'edgecolor': 'black'} # 闪电(均值): y_offset=0 使其完美镶嵌在箱线图中心
+    LIGHTNING_STYLE = {'alpha': 1.0, 'size': 60, 'edgewidth': 0.8, 'font_size': 13, 'y_offset': 0.0, 'match_cloud': True, 'fallback_color': 'gold', 'edgecolor': 'black'} # 闪电(均值): edgewidth 单独调节外边框粗细，font_size 调节均值标签字号
     
     # 🛠️ [坐标轴与外框调节区]
     AXES_STYLE      = {
         'grid_alpha': 0.4, 'spine_width': 1.2, 'spine_color': 'black',
-        'x_range': (40.0, 55.0),         # 👉 [接口: X轴显示范围] 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
+        'x_range': (39.0, 54.0),         # 👉 [接口: X轴显示范围] 设为 None 表示自适应极值。若想固定，请改为如 (-20, 160)
         'x_ticks_step': None     # 👉 [核心修复] 设为 None 自动分5格。防止在高速等大奖励区间时，刻度过于密集导致被系统强制隐藏
     }
     
@@ -409,6 +409,7 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
                  order=display_labels,         # 【核心修复】强制锁定渲染顺序，保障与后续均值对齐
                  point_size=RAIN_STYLE['size'], 
                  width_viol=CLOUD_STYLE['width'], width_box=UMBRELLA_STYLE['width'],
+                 offset=CLOUD_STYLE.get('offset', 0.1), # 将云朵的悬空高度下发给底层引擎
                  bw=0.2, dodge=False, pointplot=False, move=RAIN_STYLE['move'],
                  jitter=RAIN_STYLE['jitter'], cut=2) 
                  
@@ -427,12 +428,8 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
             # [定制雨滴] 散点集合
             collection.set_alpha(RAIN_STYLE['alpha'])
             
-    # [核心修复] 先安全地提取所有箱体的原生底色（此时它们天然带有seaborn赋予的、与云绝对一致的调色盘颜色）
-    original_patch_colors = [patch.get_facecolor() for patch in ax.patches]
-    
     for i, patch in enumerate(ax.patches):
-        base_color = original_patch_colors[i] if i < len(original_patch_colors) else 'black'
-        target_color = base_color if UMBRELLA_STYLE.get('match_cloud', True) else UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
+        target_color = colors[i % len(colors)]
         
         # [定制伞面] 四分位距箱体
         if UMBRELLA_STYLE.get('fill_face', False):
@@ -470,27 +467,47 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         # 找到在空间上最贴近的箱体索引
         if len(box_y_centers) > 0:
             patch_idx = np.argmin([abs(line_y_center - bc) for bc in box_y_centers])
-            base_color = original_patch_colors[patch_idx]
+            target_color = colors[patch_idx % len(colors)]
+            lightning_target_color = target_color if LIGHTNING_STYLE.get('match_cloud', True) else LIGHTNING_STYLE.get('fallback_color', 'gold')
         else:
-            base_color = UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
-            
-        target_color = base_color if UMBRELLA_STYLE.get('match_cloud', True) else UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
+            target_color = UMBRELLA_STYLE.get('fallback_edgecolor', 'black')
+            lightning_target_color = LIGHTNING_STYLE.get('fallback_color', 'gold')
+        
+        # [区分线型] 判断是否为水平长横线(须线)
+        ydata = line.get_ydata()
+        is_whisker = (len(ydata) == 2 and ydata[0] == ydata[1])
         
         # [定制伞骨] 中位数与极值虚线
-        line.set_color(target_color)
+        final_color = lightning_target_color if is_whisker else target_color
+        line.set_color(final_color)
         line.set_linewidth(UMBRELLA_STYLE['linewidth'])
         line.set_alpha(UMBRELLA_STYLE['alpha'])
         line.set_zorder(5)
+        
+        if is_whisker:
+            line.set_linestyle('--') # 如果 Y 坐标不变，说明是水平横线，设为虚线
+        else:
+            line.set_linestyle('-')  # 否则为竖线，保持实线
 
     # 4. ⚡ 独立绘制“闪电” (均值标记)
     means = [all_results[m]['mean_reward'] for m in model_ids]
     y_positions = np.arange(len(model_ids))
+    
+    lightning_colors = colors[:len(model_ids)] if LIGHTNING_STYLE.get('match_cloud', True) else [LIGHTNING_STYLE.get('fallback_color', 'gold')] * len(model_ids)
     ax.scatter(means, y_positions + LIGHTNING_STYLE['y_offset'], 
-               marker='D', color=LIGHTNING_STYLE['color'], 
-               edgecolors=LIGHTNING_STYLE['edgecolor'], 
-               linewidths=LIGHTNING_STYLE['linewidth'], 
+               marker='D', c=lightning_colors, 
+               edgecolors=LIGHTNING_STYLE.get('edgecolor', 'black'), 
+               linewidths=LIGHTNING_STYLE.get('edgewidth', 1.2), 
                s=LIGHTNING_STYLE['size'], alpha=LIGHTNING_STYLE['alpha'], zorder=10)
                 
+    # [新增] 在闪电正左方标注具体均值数值
+    for mean_val, y_pos, color in zip(means, y_positions, lightning_colors):
+        ax.annotate(f"{mean_val:.2f}",
+                    xy=(mean_val, y_pos + LIGHTNING_STYLE['y_offset']),
+                    xytext=(-7, 0), textcoords='offset points', # 向左偏移 12 个像素，避开菱形
+                    ha='right', va='center',
+                    fontsize=LIGHTNING_STYLE.get('font_size', 11), fontweight='bold', color=color)
+
     # 5. [定制坐标与外框]
     # plt.title('规控策略奖励双峰分布雨云图', pad=AXES_STYLE['title_pad']) # 已应要求移除大标题
     plt.xlabel('回合累计奖励')
@@ -536,7 +553,8 @@ if __name__ == "__main__":
     print("👉 请选择运行模式:")
     print("  [1] 全量评估 (重新运行仿真测试并保存数据)")
     print("  [2] 快速重绘 (跳过仿真，读取最新已有数据直接出图)")
-    mode_choice = input("请输入 1 或 2 (默认 1): ").strip()
+    mode_choice_input = input("请输入 1 或 2 (默认 2): ").strip()
+    mode_choice = mode_choice_input if mode_choice_input else '2' # Default to '2' if input is empty
     PLOT_ONLY = (mode_choice == '2')
     
     # 2. 选择环境
@@ -606,24 +624,24 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC-标准基线"},
+            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC 基线"},
             #"M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "raw_name": "M02 高效平滑", "acad_name": "SAC-平顺偏好"},
             #"M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC-效率导向"},
-            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC-安全约束"},
+            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC 专家"},
             #"M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC-保守适应"},
             #"M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "raw_name": "M06 极限死刑", "acad_name": "SAC-强安全约束"},
             #"M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "raw_name": "M07 平滑马拉松", "acad_name": "SAC-长视界平顺"},
             #"M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "raw_name": "M08 终极汇入", "acad_name": "SAC-综合强约束"},
 
             # === 第一期 diff-SAC 单专家实验 ===
-            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
+            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "Diff 纯BC", "data_path": SINGLE_DATA_PATH},
             #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "raw_name": "DM02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
             #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "raw_name": "DM03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
             #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 diff-SAC 混合专家实验 ===
             #"DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
-            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
+            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Diff 引导", "data_path": MIXED_DATA_PATH},
             #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
             #"DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
         }
