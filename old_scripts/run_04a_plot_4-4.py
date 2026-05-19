@@ -44,7 +44,7 @@ def set_publication_style():
 DATA = {
     "merge-v0":     {"sac": 0.030, "diff": 0.025, "env_name": "匝道汇入 (Merge-v0)"},
     "racetrack-v0": {"sac": 1.186, "diff": 1.020, "env_name": "极限赛道 (Racetrack-v0)"},
-    "highway-v0":   {"sac": 0.131, "diff": 0.293, "env_name": "高速巡航 (Highway-v0)"}
+    #"highway-v0":   {"sac": 0.131, "diff": 0.293, "env_name": "高速巡航 (Highway-v0)"}
 }
 
 COLOR_SAC = '#8491B4'  # 莫灰紫 (Slate Purple) - 完全对齐 run_03 配色
