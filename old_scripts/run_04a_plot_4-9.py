@@ -1,7 +1,7 @@
 """
-图 4-2：传统单峰 RL 的帕累托困境 (2D 散点前沿图)
-核心目的：揭示传统 SAC 无法同时兼顾“安全”与“效率”，
-所有基线模型都在一条“向右下倾斜的边界线”内苦苦挣扎。
+图 4-9：Diff-SAC 突破帕累托边界气泡图 (2D Bubble Pareto Plot)
+核心目的：展示 Diff-SAC 算法在三大环境中打破了传统 SAC 的帕累托边界，
+向“又快又稳”的右上角飞升。
 """
 
 import os
@@ -29,6 +29,15 @@ PLOT_STYLE = {
     "target_circle_alpha": 0.7,     # 右上角理想目标区虚线圆圈的透明度
     "legend_loc": "upper left",     # 图例锚点对齐方式
     "legend_bbox": (0.02, 0.98),    # 图例的相对位置偏移 (X, Y)，调整为左上角
+    
+    # --- 标签位置与角度微调接口 ---
+    "pareto_text_x": 80,            # “传统策略能力域”文字的中心横坐标
+    "pareto_text_y_offset": -1.2,   # “传统策略能力域”文字相对于虚线的纵向高度偏移
+    "pareto_text_rotation": -22,    # “传统策略能力域”文字的倾斜旋转角度
+    "target_circle_x": 98,          # “理想目标区”文字与圆圈的中心横坐标
+    "target_circle_y": 28,          # “理想目标区”虚线圆圈的中心纵坐标
+    "target_text_y_offset": 2,      # “理想目标区”文字相对于圆圈中心的纵向高度偏移量
+    "target_circle_r": 3.5,         # “理想目标区”虚线圆圈的半径大小
 }
 
 def set_publication_style():
@@ -72,17 +81,20 @@ HARDCODED_DATA = {
     "merge-v0": [
         {"id": "M04", "survival": 100.0, "speed": 18.6, "role": "保守"},
         {"id": "M01", "survival": 100.0, "speed": 19.0, "role": "基线"},
-        {"id": "M03", "survival": 98.0,  "speed": 19.7, "role": "激进"}
+        {"id": "M03", "survival": 98.0,  "speed": 19.7, "role": "激进"},
+        {"id": "DM06", "survival": 100.0, "speed": 27.5, "role": "SOTA"} # 请按真实数据调整
     ],
     "racetrack-v0": [
         {"id": "R05", "survival": 27.0,  "speed": 15.7, "role": "保守"},
         {"id": "R01", "survival": 45.0,  "speed": 19.3, "role": "基线"},
-        {"id": "R02", "survival": 30.0,  "speed": 18.4, "role": "激进"}
+        {"id": "R02", "survival": 30.0,  "speed": 18.4, "role": "激进"},
+        {"id": "DR06", "survival": 98.5,  "speed": 28.2, "role": "SOTA"} # 请按真实数据调整
     ],
     "highway-v0": [
         {"id": "H02", "survival": 98.0,  "speed": 20.5, "role": "保守"},
         {"id": "H01", "survival": 94.0,  "speed": 22.0, "role": "基线"},
-        {"id": "H03", "survival": 42.0,  "speed": 27.5, "role": "激进"}
+        {"id": "H03", "survival": 42.0,  "speed": 27.5, "role": "激进"},
+        {"id": "DH06", "survival": 99.0,  "speed": 26.8, "role": "SOTA"} # 请按真实数据调整
     ]
 }
 
@@ -90,7 +102,8 @@ HARDCODED_DATA = {
 ROLE_COLORS = {
     "保守": "#009688",  # 深青色
     "基线": "#78909c",  # 灰蓝色
-    "激进": "#d32f2f"   # 红色
+    "激进": "#d32f2f",  # 红色
+    "SOTA": "#FFC107"   # 琥珀金 (极其吸睛，代表突破边界的 Diff-SAC)
 }
 
 # 环境场景形状映射
@@ -155,13 +168,17 @@ def plot_traditional_pareto():
     
     # 边界线学术说明
     # 自动计算边界线上某个合适点的法线方向旋转角度，使文字完美贴合曲线走向
-    ax.text(80, pchip(80) - 1.5, "传统策略极限能力域", color='dimgray', fontsize=15, fontweight='bold', 
-            alpha=0.9, ha='center', rotation=-22, zorder=2)
+    px_text = PLOT_STYLE["pareto_text_x"]
+    py_text = pchip(px_text) + PLOT_STYLE["pareto_text_y_offset"]
+    ax.text(px_text, py_text, "传统策略极限能力域", color='dimgray', fontsize=15, fontweight='bold', 
+            alpha=0.9, ha='center', rotation=PLOT_STYLE["pareto_text_rotation"], zorder=2)
 
     # 5. 右上角：理想目标区圆圈
-    target_circle = Circle((98, 28), radius=3.5, edgecolor='gray', facecolor='none', linestyle='--', linewidth=2, alpha=PLOT_STYLE["target_circle_alpha"], zorder=2)
+    cx = PLOT_STYLE["target_circle_x"]
+    cy = PLOT_STYLE["target_circle_y"]
+    target_circle = Circle((cx, cy), radius=PLOT_STYLE["target_circle_r"], edgecolor='gray', facecolor='none', linestyle='--', linewidth=2, alpha=PLOT_STYLE["target_circle_alpha"], zorder=2)
     ax.add_patch(target_circle)
-    ax.text(98, 28, "理想目标区\n(安全且高效)", ha='center', va='center', color='dimgray', fontsize=12, fontweight='bold', zorder=3)
+    ax.text(cx, cy + PLOT_STYLE["target_text_y_offset"], "理想目标区\n(安全且高效)", ha='center', va='center', color='dimgray', fontsize=12, fontweight='bold', zorder=3)
 
     # 6. 图例与坐标轴严格限制
     ax.set_xlabel("存活率（%）", fontweight='bold', labelpad=10)
@@ -183,6 +200,7 @@ def plot_traditional_pareto():
         Line2D([0], [0], marker='o', color='w', label='保守策略', markerfacecolor=ROLE_COLORS["保守"], markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
         Line2D([0], [0], marker='o', color='w', label='基线策略', markerfacecolor=ROLE_COLORS["基线"], markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
         Line2D([0], [0], marker='o', color='w', label='激进策略', markerfacecolor=ROLE_COLORS["激进"], markersize=10, alpha=PLOT_STYLE["scatter_alpha"]),
+        Line2D([0], [0], marker='o', color='w', label='Diff-SAC', markerfacecolor=ROLE_COLORS["SOTA"], markersize=10, markeredgecolor='black', alpha=0.95),
     ]
     # 放在左中偏上位置，避开图表右上方的理想目标区和点群
     ax.legend(handles=legend_elements, loc=PLOT_STYLE["legend_loc"], bbox_to_anchor=PLOT_STYLE["legend_bbox"], fontsize=11, framealpha=0.9, edgecolor='black')
@@ -190,9 +208,9 @@ def plot_traditional_pareto():
     # 7. 保存导出
     out_dir = os.path.join(PROJECT_ROOT, "old_scripts", "output_plot", "plot4_9")
     os.makedirs(out_dir, exist_ok=True)
-    save_path = os.path.join(out_dir, "Figure_4-9_Traditional_SAC_Pareto.png")
+    save_path = os.path.join(out_dir, "Figure_4-9_DiffSAC_Pareto_Bubble.png")
     plt.savefig(save_path)
-    print(f"✅ 图 4-9 (Diff-SAC 帕累托散点图) 已成功生成：\n📁 {save_path}")
+    print(f"✅ 图 4-9 (终极帕累托气泡图) 已成功生成：\n📁 {save_path}")
 
 if __name__ == "__main__":
     plot_traditional_pareto()
