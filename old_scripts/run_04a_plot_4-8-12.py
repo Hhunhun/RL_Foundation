@@ -302,7 +302,7 @@ def save_metrics_to_csv(all_results, models_to_evaluate, save_dir):
     将量化指标保存为 CSV 文件，便于论文表格制作。
     """
     os.makedirs(save_dir, exist_ok=True)
-    csv_path = os.path.join(save_dir, f'{TARGET_ENV}_summary_metrics.csv')
+    csv_path = os.path.join(save_dir, 'summary_metrics.csv')
     headers = ['模型版本 (Model)', '平均累计奖励 (Mean Reward)', '变异系数 (CV)',
                '存活率 (Survival Rate %)', '平均纵向速度 (Mean Speed m/s)', '控制平顺性 (Action Jerk Std)']
 
@@ -354,78 +354,318 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     def _save_and_close_fig(filename_base):
         """内部辅助函数：消除重复的图表保存代码"""
         plt.tight_layout()
-        final_name = f"{TARGET_ENV}_{filename_base}.png"
-        plt.savefig(os.path.join(save_dir, final_name), dpi=300)
+        plt.savefig(os.path.join(save_dir, f'{filename_base}.png'), dpi=300)
         # 暂时关闭 PDF 导出，以提升出图速度，后续需要写论文时可取消注释
-        # plt.savefig(os.path.join(save_dir, f'{TARGET_ENV}_{filename_base}.pdf'), format='pdf', bbox_inches='tight')
+        # plt.savefig(os.path.join(save_dir, f'{filename_base}.pdf'), format='pdf', bbox_inches='tight')
         plt.close()
 
-    # ----------------------------------------------------
-    # [准备子图布局] 动态计算最优网格排列 (如 1x3, 2x2, 2x3, 2x4)
-    # ----------------------------------------------------
-    n_models = len(model_ids)
-    if n_models <= 3:
-        nrows, ncols = 1, max(1, n_models)
-    elif n_models == 4:
-        nrows, ncols = 2, 2
-    elif n_models in [5, 6]:
-        nrows, ncols = 2, 3
-    else:
-        ncols = 4
-        nrows = int(np.ceil(n_models / ncols))
-        
-    subplot_width = 4.0
-    subplot_height = 4.0
 
     # ----------------------------------------------------
-    # 图 09：动作分布 - 核密度分布网格图 (KDE Grid)
+    # 图 3：存活率柱状图
     # ----------------------------------------------------
-    fig, axes = plt.subplots(nrows, ncols, figsize=(subplot_width * ncols, subplot_height * nrows), sharex=True, sharey=True)
-    axes_flat = [axes] if nrows * ncols == 1 else axes.flatten()
+    # 🎨 [图 03 视觉配置]
+    PLOT03_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
     
-    for i in range(nrows * ncols):
-        ax = axes_flat[i]
-        if i < n_models:
-            mid = model_ids[i]
-            color = colors[i]
-            label = display_labels[i]
-            
-            actions = all_results[mid].get('actions', np.array([]))
-            if len(actions) > 0:
-                actions = actions.reshape(actions.shape[0], -1)
-                if actions.shape[1] >= 2:
-                    x_plot, y_plot = actions[:, 1], actions[:, 0]
-                    # 防止数万点导致 KDE 渲染卡死，限流下采样
-                    if len(x_plot) > 10000:
-                        idx = np.random.choice(len(x_plot), 10000, replace=False)
-                        x_plot, y_plot = x_plot[idx], y_plot[idx]
-                        
-                    try:
-                        # fill=True: 绘制如热力图般渐变的实心分布区域；thresh=0.05: 隐藏边缘极低密度的孤点
-                        sns.kdeplot(x=x_plot + np.random.normal(0, 1e-5, size=x_plot.shape), 
-                                    y=y_plot + np.random.normal(0, 1e-5, size=y_plot.shape), 
-                                    color=color, fill=True, alpha=0.8, thresh=0.05, levels=10, ax=ax)
-                    except Exception:
-                        pass
-                    
-            ax.set_title(label, color=color, fontweight='bold')
-            if i % ncols == 0:
-                ax.set_ylabel('纵向控制 / 加减速')
-            if i >= (nrows - 1) * ncols or (i + ncols >= n_models):
-                ax.set_xlabel('横向控制 / 转向')
-                ax.xaxis.set_tick_params(labelbottom=True)
-                
-            ax.set_xlim(-1.05, 1.05)
-            ax.set_ylim(-1.05, 1.05)
-            ax.grid(True, linestyle='--', alpha=0.5)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
-        else:
-            ax.axis('off')
-            
-    _save_and_close_fig('09_action_kde_grid')
+    plt.figure(figsize=(8.0, 6.0))
+    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
+    bars_surv = plt.bar(display_labels, survival_rates, color=colors, alpha=PLOT03_STYLE['alpha'], edgecolor=colors, linewidth=PLOT03_STYLE['linewidth'])
+    plt.title('规控策略存活率对比')
+    plt.ylabel('存活率 (%)')
+    plt.ylim(0, 110) # 扩大顶部留白，防止 100.0% 标签被切角
+    plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.4)
+    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
 
-    print(f"📈 精简后的核心对比图表已全部保存至: {os.path.abspath(save_dir)}")
+    # 在柱子上标注具体数字
+    for bar in bars_surv:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 1.5, f'{yval:.1f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    _save_and_close_fig('03_survival_rate_bar')
+
+    # ----------------------------------------------------
+    # 🆕 图 4：平均纵向速度柱状图 (修复自适应 Y 轴)
+    # ----------------------------------------------------
+    # 🎨 [图 04 视觉配置]
+    PLOT04_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
+    plt.figure(figsize=(8.0, 6.0))
+    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
+    bars_speed = plt.bar(display_labels, mean_speeds, color=colors, alpha=PLOT04_STYLE['alpha'], edgecolor=colors, linewidth=PLOT04_STYLE['linewidth'])
+    plt.title('平均纵向速度对比')
+    plt.ylabel('平均纵向速度 (m/s)')
+
+    # [重构自适应缩放] 根据数据的真实极差动态计算缩放边界，确保完美居中且不过度裁剪
+    min_speed = min(mean_speeds) if len(mean_speeds) > 0 else 0.0
+    max_speed = max(mean_speeds) if len(mean_speeds) > 0 else 1.0
+    y_range = max_speed - min_speed
+    margin = y_range * 0.15 if y_range > 0 else max_speed * 0.15
+    
+    y_min = max(0.0, min_speed - margin - 1.0)
+    y_max = max_speed + margin + 1.0
+    plt.ylim(y_min, y_max)
+
+    plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.4)
+    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
+
+    # 在柱子上标注具体数字
+    for bar in bars_speed:
+        yval = bar.get_height()
+        # 文本高度也根据动态域按比例抬升
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + (y_max - y_min) * 0.02, f'{yval:.2f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    _save_and_close_fig('04_mean_speed_bar')
+
+    # ====================================================
+    # 🚀 [新增] 破局方差陷阱：四种替代维度的稳定性评估图表
+    # ====================================================
+
+    # ----------------------------------------------------
+    # 方案 A：图 02a 变异系数对比 (Coefficient of Variation)
+    # 衡量单位收益下的相对波动风险，消除高分基数带来的绝对方差惩罚
+    # ----------------------------------------------------
+    # 🎨 [图 02a 视觉配置]
+    PLOT02A_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
+    plt.figure(figsize=(8.0, 6.0))
+    cvs = [all_results[m]['cv'] for m in model_ids]
+    bars_cv = plt.bar(display_labels, cvs, color=colors, alpha=PLOT02A_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02A_STYLE['linewidth'])
+    plt.title('规控策略相对波动对比')
+    plt.ylabel('变异系数')
+
+    max_cv = max(cvs) if len(cvs) > 0 else 1.0
+    plt.ylim(0, max_cv * 1.15)
+    plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
+    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
+
+    for bar in bars_cv:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_cv * 0.02, f'{yval:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    _save_and_close_fig('02a_cv_bar')
+
+
+    # ----------------------------------------------------
+    # 方案 D：图 02d 动作平滑度方差 (Action Jerk Variance)
+    # 深度扣题“扩散模型平滑噪声”：计算方向盘和油门在时间步上的抖动烈度
+    # ----------------------------------------------------
+    # 🎨 [图 02d 视觉配置]
+    PLOT02D_STYLE = {'alpha': 0.40, 'linewidth': 1.0}
+    
+    plt.figure(figsize=(8.0, 6.0))
+    jerk_stds = [all_results[m]['action_jerk_std'] for m in model_ids]
+    bars_jerk = plt.bar(display_labels, jerk_stds, color=colors, alpha=PLOT02D_STYLE['alpha'], edgecolor=colors, linewidth=PLOT02D_STYLE['linewidth'])
+    plt.title('物理动作平滑度对比')
+    plt.ylabel('动作变化量的平均标准差')
+
+    max_jerk = max(jerk_stds) if len(jerk_stds) > 0 else 1.0
+    plt.ylim(0, max_jerk * 1.15)
+    plt.xticks(rotation=25, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
+    plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=5))
+
+    for bar in bars_jerk:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + max_jerk * 0.02, f'{yval:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    _save_and_close_fig('02d_action_jerk_std_bar')
+
+    # ====================================================
+    # 🌟 [高级可视化方案] 针对论文的高信息密度图表 05 ~ 07 (原 08 ~ 10)
+    # ==========================================
+
+    # ----------------------------------------------------
+    # 🆕 图 07a：学术级五维雷达图 (相对动态归一化 / 组内排名)
+    # 包含任务效能、安全保障、通行效率、策略稳定性、控制平顺性
+    # ----------------------------------------------------
+    
+    # 🎨 [视觉精修配置区] 雷达图专享样式接口
+    RADAR_STYLE = {
+        'label_fontsize': 18,      # 👉 调节“通行效率”、“任务效能”等外围维度标签的字号
+        'legend_fontsize': 16,     # 👉 调节图例文字的字号大小
+        'label_pad': 20,           # 👉 调节标签与雷达图边缘的径向间距 (调大以防止文字与五边形刻度线重叠)
+        # 👉 [单独调节接口] 针对每个维度标签独立设置 (x_offset, y_offset)
+        'label_offsets': {
+            '任务效能': (0, -15),     # (左右微调, 上下微调)，正数向右/上，负数向左/下
+            '安全保障': (0, 0),
+            '通行效率': (0, 12),
+            '策略稳定性': (0, 12),
+            '控制平顺性': (0, 0),
+        }
+    }
+
+    metrics_names = ['任务效能', '安全保障', '通行效率', '策略稳定性', '控制平顺性']
+    num_vars = len(metrics_names)
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    angles += angles[:1] # 闭合雷达圈
+    
+    def normalize_positive(arr):
+        min_v, max_v = min(arr), max(arr)
+        return [0.2 + 0.8 * (x - min_v) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
+        
+    def normalize_negative(arr):
+        min_v, max_v = min(arr), max(arr)
+        return [0.2 + 0.8 * (max_v - x) / (max_v - min_v) if max_v > min_v else 1.0 for x in arr]
+        
+    # 1. 抽取并计算各个原始维度数据
+    mean_rewards = [all_results[m]['mean_reward'] for m in model_ids]
+    survival_rates = [all_results[m]['survival_rate'] for m in model_ids]
+    mean_speeds = [all_results[m]['mean_speed'] for m in model_ids]
+    cvs = [all_results[m]['cv'] for m in model_ids]
+    jerk_stds = [all_results[m]['action_jerk_std'] for m in model_ids]
+            
+    # 2. 严格执行 Min-Max 归一化逻辑
+    norm_rewards = normalize_positive(mean_rewards)
+    norm_survivals = normalize_positive(survival_rates)
+    norm_speeds = normalize_positive(mean_speeds)
+    norm_cvs = normalize_negative(cvs)
+    norm_jerks = normalize_negative(jerk_stds)
+    
+    fig, ax = plt.subplots(figsize=(8.0, 8.0), subplot_kw=dict(polar=True))
+    
+    # 3. 清理坐标系底层杂质，重构纯净版多边形网格
+    ax.spines['polar'].set_visible(False)
+    ax.yaxis.grid(False)
+    ax.xaxis.grid(False)
+    
+    # 绘制正五边形刻度围栏
+    for level in [0.2, 0.4, 0.6, 0.8, 1.0]:
+        grid_values = [level] * num_vars
+        grid_values += grid_values[:1]
+        ax.plot(angles, grid_values, color='gray', linestyle='--', linewidth=0.8, alpha=0.5, zorder=0)
+        
+    # 绘制中心到顶点的骨架射线
+    for angle in angles[:-1]:
+        ax.plot([angle, angle], [0, 1.0], color='gray', linestyle='-', linewidth=0.8, alpha=0.5, zorder=0)
+
+    # 4. 铺设模型评估轨迹层
+    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
+        values = [norm_rewards[i], norm_survivals[i], norm_speeds[i], norm_cvs[i], norm_jerks[i]]
+        values += values[:1]
+        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label,
+                marker='o', markersize=6, markeredgecolor='white', zorder=2)
+        ax.fill(angles, values, color=color, alpha=0.15, zorder=1)
+        
+    ax.set_theta_offset(np.pi / 2) # 从正上方起针
+    ax.set_theta_direction(-1) # 顺时针渲染
+    
+    # 📌 应用标签文字及位置的动态调节
+    lines, labels = ax.set_thetagrids(np.degrees(angles[:-1]), metrics_names, fontsize=RADAR_STYLE['label_fontsize'], fontweight='bold')
+    ax.tick_params(axis='x', pad=RADAR_STYLE['label_pad'])
+    
+    # 针对每个标签应用独立的物理位移
+    import matplotlib.transforms as mtransforms
+    for label in labels:
+        text = label.get_text()
+        if text in RADAR_STYLE.get('label_offsets', {}):
+            x_off, y_off = RADAR_STYLE['label_offsets'][text]
+            if x_off != 0 or y_off != 0:
+                offset = mtransforms.ScaledTranslation(x_off/72., y_off/72., fig.dpi_scale_trans)
+                label.set_transform(label.get_transform() + offset)
+            
+    ax.set_ylim(0, 1.05)
+    
+    # 精准设置向上的单一主轴刻度标签
+    ax.set_rlabel_position(0)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], color='dimgray', fontsize=10)
+    
+    # plt.title('五维综合性能雷达图 (相对动态归一化)', y=1.22) # 应要求移除大标题
+    plt.legend(loc='lower center', bbox_to_anchor=(0.5, 1.08), ncol=min(3, len(model_ids)), frameon=False, columnspacing=1.0, fontsize=RADAR_STYLE['legend_fontsize'])
+    
+    _save_and_close_fig('07a_performance_radar_relative')
+
+    # ----------------------------------------------------
+    # 🆕 图 07b：学术级五维雷达图 (绝对物理归一化 / 客观极值)
+    # ----------------------------------------------------
+    # 物理极限配置面板 (Physical Limits Dictionary)
+    # 格式: {"环境名称": {"指标名": (物理最小值, 物理最大值)}}
+    PHYSICAL_LIMITS = {
+        "merge-v0": {
+            "reward": (45, 50), "survival": (95, 100), "speed": (18, 20), 
+            "cv": (0.02, 0.15), "jerk": (0.12, 0.3)
+        },
+        "racetrack-v0": {
+            "reward": (0, 90), "survival": (0, 55), "speed": (14, 25), 
+            "cv": (0.5, 2.5), "jerk": (0.0, 1.9)
+        },
+        "highway-v0": {
+            "reward": (0, 50), "survival": (0, 100), "speed": (15, 30), 
+            "cv": (0.0, 0.5), "jerk": (0.0, 0.5)
+        }
+    }
+    
+    # 获取当前环境的物理极限，若无则使用兜底默认值
+    limits = PHYSICAL_LIMITS.get(TARGET_ENV, {
+        "reward": (0, 100), "survival": (0, 100), "speed": (0, 30), 
+        "cv": (0.0, 1.0), "jerk": (0.0, 1.0)
+    })
+    
+    def norm_abs_pos(arr, min_v, max_v):
+        # 截断以防越界 (Clamp)，然后绝对映射到 [0.2, 1.0] 雷达环
+        return [0.2 + 0.8 * max(0.0, min(1.0, (x - min_v) / (max_v - min_v))) if max_v > min_v else 1.0 for x in arr]
+        
+    def norm_abs_neg(arr, min_v, max_v):
+        return [0.2 + 0.8 * max(0.0, min(1.0, (max_v - x) / (max_v - min_v))) if max_v > min_v else 1.0 for x in arr]
+
+    abs_norm_rewards = norm_abs_pos(mean_rewards, *limits["reward"])
+    abs_norm_survivals = norm_abs_pos(survival_rates, *limits["survival"])
+    abs_norm_speeds = norm_abs_pos(mean_speeds, *limits["speed"])
+    abs_norm_cvs = norm_abs_neg(cvs, *limits["cv"])
+    abs_norm_jerks = norm_abs_neg(jerk_stds, *limits["jerk"])
+    
+    fig, ax = plt.subplots(figsize=(8.0, 8.0), subplot_kw=dict(polar=True))
+    
+    ax.spines['polar'].set_visible(False)
+    ax.yaxis.grid(False)
+    ax.xaxis.grid(False)
+    
+    for level in [0.2, 0.4, 0.6, 0.8, 1.0]:
+        grid_values = [level] * num_vars
+        grid_values += grid_values[:1]
+        ax.plot(angles, grid_values, color='gray', linestyle='--', linewidth=0.8, alpha=0.5, zorder=0)
+        
+    for angle in angles[:-1]:
+        ax.plot([angle, angle], [0, 1.0], color='gray', linestyle='-', linewidth=0.8, alpha=0.5, zorder=0)
+
+    for i, (mid, color, label) in enumerate(zip(model_ids, colors, display_labels)):
+        values = [abs_norm_rewards[i], abs_norm_survivals[i], abs_norm_speeds[i], abs_norm_cvs[i], abs_norm_jerks[i]]
+        values += values[:1]
+        ax.plot(angles, values, color=color, linewidth=2, linestyle='solid', label=label,
+                marker='o', markersize=6, markeredgecolor='white', zorder=2)
+        ax.fill(angles, values, color=color, alpha=0.15, zorder=1)
+        
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+    
+    # 📌 应用标签文字及位置的动态调节
+    lines, labels = ax.set_thetagrids(np.degrees(angles[:-1]), metrics_names, fontsize=RADAR_STYLE['label_fontsize'], fontweight='bold')
+    ax.tick_params(axis='x', pad=RADAR_STYLE['label_pad'])
+    
+    # 针对每个标签应用独立的物理位移
+    import matplotlib.transforms as mtransforms
+    for label in labels:
+        text = label.get_text()
+        if text in RADAR_STYLE.get('label_offsets', {}):
+            x_off, y_off = RADAR_STYLE['label_offsets'][text]
+            if x_off != 0 or y_off != 0:
+                offset = mtransforms.ScaledTranslation(x_off/72., y_off/72., fig.dpi_scale_trans)
+                label.set_transform(label.get_transform() + offset)
+            
+    ax.set_ylim(0, 1.05)
+    
+    ax.set_rlabel_position(0)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], color='dimgray', fontsize=10)
+    
+    # plt.title('五维综合性能雷达图 (绝对物理极限)', y=1.22) # 应要求移除大标题
+    plt.legend(loc='lower center', bbox_to_anchor=(0.5, 1.08), ncol=min(3, len(model_ids)), frameon=False, columnspacing=1.0, fontsize=RADAR_STYLE['legend_fontsize'])
+    
+    _save_and_close_fig('07b_performance_radar_absolute')
+
+    print(f"📈 核心雷达图已全部保存至: {os.path.abspath(save_dir)}")
 
 
 if __name__ == "__main__":
@@ -439,8 +679,7 @@ if __name__ == "__main__":
     print("👉 请选择运行模式:")
     print("  [1] 全量评估 (重新运行仿真测试并保存数据)")
     print("  [2] 快速重绘 (跳过仿真，读取最新已有数据直接出图)")
-    mode_choice_input = input("请输入 1 或 2 (默认 2): ").strip()
-    mode_choice = mode_choice_input if mode_choice_input else '2' # Default to '2' if input is empty
+    mode_choice = input("请输入 1 或 2 (默认 1): ").strip()
     PLOT_ONLY = (mode_choice == '2')
     
     # 2. 选择环境
@@ -510,26 +749,31 @@ if __name__ == "__main__":
         
         models_to_evaluate = {
             # === 第一期 SAC 消融矩阵 ===
-            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC-标准基线"},
+            #"M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC-标准基线"},
             #"M02": {"path": "outputs/merge-v0/models/SAC_M02_Efficient_Smooth_20260420_154007/sac_merge_final.pth", "raw_name": "M02 高效平滑", "acad_name": "SAC-平顺偏好"},
-            "M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC-效率导向"},
-            "M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC-安全约束"},
+            #"M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC-效率导向"},
+            #"M04": {"path": "outputs/merge-v0/models/SAC_M04_Safety_First_20260420_170911/sac_merge_final.pth", "raw_name": "M04 安全至上", "acad_name": "SAC-安全约束"},
             #"M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC-保守适应"},
             #"M06": {"path": "outputs/merge-v0/models/SAC_M06_Extreme_Penalty_20260420_232207/sac_merge_final.pth", "raw_name": "M06 极限死刑", "acad_name": "SAC-强安全约束"},
             #"M07": {"path": "outputs/merge-v0/models/SAC_M07_Smooth_Marathon_20260421_003822/sac_merge_final.pth", "raw_name": "M07 平滑马拉松", "acad_name": "SAC-长视界平顺"},
             #"M08": {"path": "outputs/merge-v0/models/SAC_M08_Ultimate_Merge_20260421_023258/sac_merge_final.pth", "raw_name": "M08 终极汇入", "acad_name": "SAC-综合强约束"},
 
             # === 第一期 diff-SAC 单专家实验 ===
-            "DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
+            #"DM01": {"path": "outputs/merge-v0/models/DiffSAC_DM01_Pure_BC_20260511_135709/online_finetune/diff_sac_final.pth", "raw_name": "DM01 纯 BC 克隆", "acad_name": "单专家 Diff-SAC-纯BC", "data_path": SINGLE_DATA_PATH},
             #"DM02": {"path": "outputs/merge-v0/models/DiffSAC_DM02_Micro_Q_20260511_152002/online_finetune/diff_sac_final.pth", "raw_name": "DM02 微引导", "acad_name": "单专家 Diff-SAC-微引导", "data_path": SINGLE_DATA_PATH},
             #"DM03": {"path": "outputs/merge-v0/models/DiffSAC_DM03_Standard_Q_20260511_170511/online_finetune/diff_sac_final.pth", "raw_name": "DM03 标准引导", "acad_name": "单专家 Diff-SAC-标准引导", "data_path": SINGLE_DATA_PATH},
             #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
 
             # === 第二期 diff-SAC 混合专家实验 ===
             #"DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "混合专家 Diff-SAC-纯BC", "data_path": MIXED_DATA_PATH},
-            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
+            #"DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
             #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
-            "DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
+            #"DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
+        
+            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC 基线"},
+            #"M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC 专家"},
+            "M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC 专家"},
+            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Diff-SAC", "data_path": MIXED_DATA_PATH},
         }
 
     elif TARGET_ENV == "racetrack-v0":
@@ -558,10 +802,11 @@ if __name__ == "__main__":
             #"DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "raw_name": "DR06 混合微引导", "acad_name": "混合专家 Diff-SAC-微引导", "data_path": MIXED_DATA_PATH},
             #"DR07": {"path": "outputs/racetrack-v0/models/DiffSAC_DR07_Mixed_Standard_Q_20260510_223055/online_finetune/diff_sac_final.pth", "raw_name": "DR07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
             #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
-                    
-            "R07": {"path": "outputs/racetrack-v0/models/SAC_R07_SAC_Zero_Tolerance_20260505_173235/sac_racetrack_final.pth", "raw_name": "R07 零容忍", "acad_name": "SAC 基线"},
+
+            "R02": {"path": "outputs/racetrack-v0/models/SAC_R02_SAC_Speed_Priority_20260505_060152/sac_racetrack_final.pth", "raw_name": "R02 速度优先", "acad_name": "SAC 基线"},
+            "R05": {"path": "outputs/racetrack-v0/models/SAC_R05_SAC_Smooth_Racing_20260505_131614/sac_racetrack_final.pth", "raw_name": "R05 单专家", "acad_name": "SAC 专家"},
             "DR06": {"path": "outputs/racetrack-v0/models/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112/online_finetune/diff_sac_final.pth", "raw_name": "DR06 混合微引导", "acad_name": "Diff-SAC", "data_path": MIXED_DATA_PATH},
-        
+            #"DR08": {"path": "outputs/racetrack-v0/models/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410/online_finetune/diff_sac_final.pth", "raw_name": "DR08 混合强干预", "acad_name": "Diff-SAC ", "data_path": MIXED_DATA_PATH},
         }
 
     else: # highway-v0
@@ -603,7 +848,8 @@ if __name__ == "__main__":
         eval_run_name = f"[{versions_str}]_{timestamp}"
 
         # 极简输出路径：直接指向目标文件夹，不再生成冗余的嵌套子目录
-        plot_save_dir = r"E:\Autol_Lab\RL_Foundation\old_scripts\output_plot\plot4-6"
+        target_plot_folder = "plot4-12" if TARGET_ENV == "merge-v0" else "plot4-8"
+        plot_save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_plot", target_plot_folder)
         data_save_dir = os.path.join(plot_save_dir, "data")
         os.makedirs(plot_save_dir, exist_ok=True)
 
@@ -657,7 +903,8 @@ if __name__ == "__main__":
                         res['action_jerk_std'] = np.mean(np.std(np.diff(acts, axis=0), axis=0)) if len(acts) > 1 else 0.0
 
                 # 极简输出路径：直接指向目标文件夹，不再生成冗余的嵌套子目录
-                plot_save_dir = r"E:\Autol_Lab\RL_Foundation\old_scripts\output_plot\plot4-6"
+                target_plot_folder = "plot4-12" if TARGET_ENV == "merge-v0" else "plot4-8"
+                plot_save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_plot", target_plot_folder)
                 data_save_dir = os.path.join(plot_save_dir, "data")
                 os.makedirs(plot_save_dir, exist_ok=True)
                 
