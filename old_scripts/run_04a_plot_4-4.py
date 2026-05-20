@@ -65,7 +65,7 @@ def draw_cv_bar_chart(ax, env_key, is_single=False):
     # 2. 坐标系标签与清理
     ax.set_xticks(x)
     # 组合图为了节省空间，可将名称写在底部；单图可直接写全名
-    ax.set_xticklabels(['SAC\n核心基线', '混合专家\nDiff-SAC'] if is_single else ['SAC', 'Diff-SAC'], fontsize=12, fontweight='bold')
+    ax.set_xticklabels(['SAC 基线', 'Diff-SAC'] if is_single else ['SAC', 'Diff-SAC'], fontsize=12, fontweight='bold')
     ax.set_ylabel('变异系数 (CV)', fontweight='bold')
     ax.set_xlabel(d["env_name"], fontweight='bold', labelpad=10)
     
@@ -97,7 +97,12 @@ def draw_cv_bar_chart(ax, env_key, is_single=False):
 def generate_plots():
     set_publication_style()
     
-    # 步骤一：独立输出三张单图
+    num_envs = len(DATA)
+    if num_envs == 0:
+        print("没有可绘制的数据！")
+        return
+        
+    # 步骤一：独立输出单图
     print("==================================================")
     for env_key in DATA.keys():
         fig, ax = plt.subplots(figsize=(4.5, 5))
@@ -108,19 +113,22 @@ def generate_plots():
         plt.close()
         print(f"✅ 生成单环境图: {save_path}")
 
-    # 步骤二：输出 1x3 组合对比图
-    fig, axes = plt.subplots(1, 3, figsize=(12, 5)) # 12,5 比例更紧凑高级
+    # 步骤二：输出动态 1xN 组合对比图
+    fig, axes = plt.subplots(1, num_envs, figsize=(4 * num_envs, 5)) 
+    if num_envs == 1:
+        axes = [axes]
+        
     for ax, env_key in zip(axes, DATA.keys()):
         draw_cv_bar_chart(ax, env_key, is_single=False)
         
     # 全局图例顶置居中
-    handles = [Patch(facecolor=COLOR_SAC, edgecolor=COLOR_SAC, linewidth=1.0, alpha=0.40, label='SAC 核心基线'), 
-               Patch(facecolor=COLOR_DIFF, edgecolor=COLOR_DIFF, linewidth=1.0, alpha=0.40, label='混合专家 Diff-SAC')]
+    handles = [Patch(facecolor=COLOR_SAC, edgecolor=COLOR_SAC, linewidth=1.0, alpha=0.40, label='SAC 基线'), 
+               Patch(facecolor=COLOR_DIFF, edgecolor=COLOR_DIFF, linewidth=1.0, alpha=0.40, label='Diff-SAC')]
     # [核心修复] 使用 prop 字典传递字号与粗细，解决 Matplotlib 原生 Legend 组件不识别 fontweight 的 Bug
     fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 1.08), ncol=2, frameon=False, prop={'weight': 'bold', 'size': 14})
     
     plt.tight_layout()
-    combined_path = os.path.join(SAVE_DIR, "Figure_4-4_CV_Bar_Combined_1x3.png")
+    combined_path = os.path.join(SAVE_DIR, f"Figure_4-4_CV_Bar_Combined_1x{num_envs}.png")
     plt.savefig(combined_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"✅ 生成全场景组合图: {combined_path}")

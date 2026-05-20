@@ -364,9 +364,9 @@ if __name__ == "__main__":
             # "DM02 微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM02_Micro_Q_...",
             # "DM03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM03_Standard_Q_...",
             # "DM04 强力干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM04_Strong_Q_...",
-            "SAC 保守基线 (M05)": f"outputs/{TARGET_ENV}/logs/SAC_M05_Patient_Merger_20260420_220108",
-            "Diff-SAC 纯BC消融 (DM01)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM01_Pure_BC_20260511_135709",
-            "Diff-SAC 终极SOTA (DM06)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844",
+            "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_M05_Patient_Merger_20260420_220108",
+            "行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM01_Pure_BC_20260511_135709",
+            "Diff-SAC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844",
         }
     elif TARGET_ENV == "racetrack-v0":
         models_to_plot = {
@@ -388,18 +388,18 @@ if __name__ == "__main__":
             #"DR06 混合微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260506_150630",
             #"DR07 混合标引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944",
             #"DR08 混合强干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916",
-            "SAC 保守基线 (R05)": f"outputs/{TARGET_ENV}/logs/SAC_R05_SAC_Smooth_Racing_20260505_131614",
-            "Diff-SAC 纯BC消融 (DR05)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
-            "Diff-SAC 终极SOTA (DR06)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112",
+            "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_R05_SAC_Smooth_Racing_20260505_131614",
+            "行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
+            "Diff-SAC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112",
         }
     else: # highway-v0
         models_to_plot = {
             # "SAC 安全基准 (H5)": f"outputs/{TARGET_ENV}/logs/SAC_H5_20260330_135449",
             # "Diff-SAC 极微引导 (DH5)": f"outputs/{TARGET_ENV}/logs/DH5_20260406_023023",
             # "Diff-SAC 强力引导 (DH3)": f"outputs/{TARGET_ENV}/logs/DH3_20260405_101704",
-            "SAC 保守基线 (H02)": f"outputs/{TARGET_ENV}/logs/SAC_H02_Safety_Priority_SAC_20260512_040012",
-            "Diff-SAC 纯BC消融 (DH01)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH01_Pure_BC_20260514_023858",
-            "Diff-SAC 终极SOTA (DH06)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237",
+            "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_H02_Safety_Priority_SAC_20260512_040012",
+            "行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH01_Pure_BC_20260514_023858",
+            "Diff-SAC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237",
         }
     
     # ==========================================
@@ -430,7 +430,16 @@ if __name__ == "__main__":
     ]
 
     # ==========================================
-    # 🎨 独立图表坐标轴范围自定义 (个性化裁剪窗口)
+    # 🎛️ 独立环境平滑系数自定义 (EMA Smoothing Weights)
+    # ==========================================
+    CUSTOM_SMOOTH_WEIGHTS = {
+        "merge-v0": 0.96,      # 匝道汇入环境平滑系数 (越接近 1 越平滑，典型范围 0.8~0.99)
+        "racetrack-v0": 0.989,  # 极限赛道环境平滑系数
+        "highway-v0": 0.989     # 高速巡航环境平滑系数
+    }
+
+    # ==========================================
+    #  独立图表坐标轴范围自定义 (个性化裁剪窗口)
     # ==========================================
     # 格式: 分环境独立配置，方便针对三大环境设置不同的截断
     CUSTOM_AXES_LIMITS = {
@@ -444,7 +453,7 @@ if __name__ == "__main__":
         },
         "racetrack-v0": {
             # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。
-            "全局环境交互奖励": {"xlim": None, "ylim": None},  
+            "全局环境交互奖励": {"xlim": (0, 180000), "ylim": None},  
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 550)},  
             "回合步数": {"xlim": None, "ylim": (0, 550)},      
@@ -473,10 +482,12 @@ if __name__ == "__main__":
     folder_name = f"{TARGET_ENV}_[{'_'.join(short_names)}]_{timestamp}"
     save_directory = os.path.join(PROJECT_ROOT, "old_scripts", "output_plot", "plot4-3", folder_name)
 
+    current_smooth_weight = CUSTOM_SMOOTH_WEIGHTS.get(TARGET_ENV, 0.85)
+
     print("\n[1/2] 正在绘制各模型原生训练曲线...")
-    plot_training_curves(models_to_plot, save_directory, raw_tags_to_plot, smooth_weight=0.989, align_to_env_steps=False, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
+    plot_training_curves(models_to_plot, save_directory, raw_tags_to_plot, smooth_weight=current_smooth_weight, align_to_env_steps=False, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
     
     print("\n[2/2] 正在绘制 SAC 与 Diff-SAC 统一 X 轴的时空对齐对比曲线...")
-    plot_training_curves(models_to_plot, save_directory, aligned_tags_to_plot, smooth_weight=0.989, align_to_env_steps=True, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
+    plot_training_curves(models_to_plot, save_directory, aligned_tags_to_plot, smooth_weight=current_smooth_weight, align_to_env_steps=True, custom_limits=CUSTOM_AXES_LIMITS.get(TARGET_ENV, {}))
     
     print(f"\n📈 所有原生及对齐对比图表已保存至: {save_directory}")
