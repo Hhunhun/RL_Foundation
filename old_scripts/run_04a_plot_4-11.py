@@ -449,7 +449,7 @@ if __name__ == "__main__":
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 110)},  
             "回合步数": {"xlim": None, "ylim": (0, 110)},      
-            "Q值评估": {"xlim": None, "ylim": (0, None)},          
+            "Q值评估": {"xlim": (0, 80000), "ylim": (0, None)},  # 👉 修改 xlim 即可单独控制横坐标范围
         },
         "racetrack-v0": {
             # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。
@@ -457,7 +457,7 @@ if __name__ == "__main__":
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 550)},  
             "回合步数": {"xlim": None, "ylim": (0, 550)},      
-            "Q值评估": {"xlim": None, "ylim": (0, None)},          
+            "Q值评估": {"xlim": (0, 1600), "ylim": (0, None)}, # 👉 修改 xlim
         },
         "highway-v0": {
             # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。
@@ -465,7 +465,7 @@ if __name__ == "__main__":
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 250)}, 
             "回合步数": {"xlim": None, "ylim": (0, 250)}, 
-            "Q值评估": {"xlim": None, "ylim": (0, None)},          
+            "Q值评估": {"xlim": (0, 100000), "ylim": (0, None)}, # 👉 修改 xlim
         }
     }
 

@@ -330,7 +330,25 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
     # 激活全局学术样式滤镜
     set_publication_style()
     os.makedirs(save_dir, exist_ok=True)
-    model_ids = list(all_results.keys())
+    
+    # 🎛️ 👉 [接口：自定义图表标签显示顺序]
+    # 在这里填入模型 ID 的列表来强制改变所有图表中的展示顺序。
+    # 例如：["M01", "DM06", "M05"] (即可调换第二和第三个模型的位置)
+    # 设为 None 则默认使用 models_to_evaluate 字典中的加载顺序。
+    CUSTOM_DISPLAY_ORDER = ["M01", "DM06", "M05"]
+
+    
+    original_model_ids = list(all_results.keys())
+    
+    if CUSTOM_DISPLAY_ORDER is not None:
+        model_ids = [mid for mid in CUSTOM_DISPLAY_ORDER if mid in all_results]
+        # 自动补齐未在自定义列表中声明的其他模型
+        for mid in original_model_ids:
+            if mid not in model_ids:
+                model_ids.append(mid)
+    else:
+        model_ids = original_model_ids
+        
     display_labels = [models_to_evaluate[mid]["display_name"] for mid in model_ids]
     
     # --- 采用《Nature》顶级期刊高对比度色系 (NPG Academic Palette) ---
@@ -349,7 +367,13 @@ def plot_comparisons(all_results, models_to_evaluate, save_dir):
         "#4E79A7", # 稳重蓝 (Muted Blue)
         "#A73030", # 暗红色 (Dark Red)
     ]
-    colors = sns.color_palette(academic_colors, n_colors=len(model_ids))
+    
+    # 💡 保证“颜色不变”机制：
+    # 先按最原始的加载顺序分配专属颜色，再根据自定义显示顺序重新映射。
+    # 确保每个模型绑定的物理颜色绝对固定，不会因为图表位置的改变而变色。
+    base_colors = sns.color_palette(academic_colors, n_colors=len(original_model_ids))
+    color_map = {mid: color for mid, color in zip(original_model_ids, base_colors)}
+    colors = [color_map[mid] for mid in model_ids]
 
     def _save_and_close_fig(filename_base):
         """内部辅助函数：消除重复的图表保存代码"""
@@ -770,10 +794,15 @@ if __name__ == "__main__":
             #"DM07": {"path": "outputs/merge-v0/models/DiffSAC_DM07_Mixed_Standard_Q_20260513_194923/online_finetune/diff_sac_final.pth", "raw_name": "DM07 混合标引导", "acad_name": "混合专家 Diff-SAC-标准引导", "data_path": MIXED_DATA_PATH},
             #"DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "混合专家 Diff-SAC-强引导", "data_path": MIXED_DATA_PATH},
         
-            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "SAC 基线"},
+            "M01": {"path": "outputs/merge-v0/models/SAC_M01_Base_Merge_20260511_042953/sac_merge_final.pth", "raw_name": "M01 基础生存", "acad_name": "Q = 0"},
             #"M03": {"path": "outputs/merge-v0/models/SAC_M03_Aggressive_Gap_Finding_20260420_162217/sac_merge_final.pth", "raw_name": "M03 激进寻隙", "acad_name": "SAC 专家"},
-            "M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "SAC 专家"},
-            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Diff-SAC", "data_path": MIXED_DATA_PATH},
+            "DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Q = 0.01", "data_path": MIXED_DATA_PATH},
+            "M05": {"path": "outputs/merge-v0/models/SAC_M05_Patient_Merger_20260420_220108/sac_merge_final.pth", "raw_name": "M05 耐心等待", "acad_name": "Q = 1.0"},
+        
+            #"DM05": {"path": "outputs/merge-v0/models/DiffSAC_DM05_Mixed_BC_20260513_163546/online_finetune/diff_sac_final.pth", "raw_name": "DM05 混合纯BC", "acad_name": "Q = 0", "data_path": MIXED_DATA_PATH},
+            #"DM06": {"path": "outputs/merge-v0/models/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844/online_finetune/diff_sac_final.pth", "raw_name": "DM06 混合微引导", "acad_name": "Q = 0.01", "data_path": MIXED_DATA_PATH},
+            #"DM08": {"path": "outputs/merge-v0/models/DiffSAC_DM08_Mixed_Strong_Q_20260513_211948/online_finetune/diff_sac_final.pth", "raw_name": "DM08 混合强干预", "acad_name": "Q = 1.0", "data_path": MIXED_DATA_PATH},
+            #"DM04": {"path": "outputs/merge-v0/models/DiffSAC_DM04_Strong_Q_20260511_183810/online_finetune/diff_sac_final.pth", "raw_name": "DM04 强力干预", "acad_name": "单专家 Diff-SAC-强引导", "data_path": SINGLE_DATA_PATH},
         }
 
     elif TARGET_ENV == "racetrack-v0":

@@ -112,7 +112,7 @@ ENV_CONFIGS = [
 ]
 
 # 组内统一标签
-GROUP_LABELS = ['安全约束', '标准基线', '效率导向']
+GROUP_LABELS = ['保守策略', '基线策略', '激进策略']
 
 # 采用 run03 中柔和高级的 Nature 风格配色
 COLOR_SAFE = '#00A087'  # 翠绿色：让人安心的安全色
@@ -292,9 +292,9 @@ def plot_pareto_dilemma():
     # ==========================================
     # [核心修复] 将图例统一横向排列并顶置，绝对不遮挡任何数据
     legend_elements = [
-        Patch(facecolor=COLOR_SAFE, edgecolor=PLOT_STYLE["bar_edgecolor"], alpha=PLOT_STYLE["bar_alpha"], label='安全约束'),
-        Patch(facecolor=COLOR_BASE, edgecolor=PLOT_STYLE["bar_edgecolor"], alpha=PLOT_STYLE["bar_alpha"], label='标准基线'),
-        Patch(facecolor=COLOR_EFF, edgecolor=PLOT_STYLE["bar_edgecolor"], alpha=PLOT_STYLE["bar_alpha"], label='效率导向'),
+        Patch(facecolor=COLOR_SAFE, edgecolor=PLOT_STYLE["bar_edgecolor"], alpha=PLOT_STYLE["bar_alpha"], label='保守策略'),
+        Patch(facecolor=COLOR_BASE, edgecolor=PLOT_STYLE["bar_edgecolor"], alpha=PLOT_STYLE["bar_alpha"], label='基线基线'),
+        Patch(facecolor=COLOR_EFF, edgecolor=PLOT_STYLE["bar_edgecolor"], alpha=PLOT_STYLE["bar_alpha"], label='激进策略'),
         Line2D([0], [0], color=PLOT_STYLE["line_color"], 
                marker=PLOT_STYLE["marker_style"], markerfacecolor=PLOT_STYLE["marker_facecolor"], 
                markeredgecolor=PLOT_STYLE["marker_edgecolor"], markersize=PLOT_STYLE["marker_size"], 

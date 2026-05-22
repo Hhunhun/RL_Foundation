@@ -29,6 +29,9 @@ PLOT_STYLE = {
     "target_circle_alpha": 0.7,     # 右上角理想目标区虚线圆圈的透明度
     "legend_loc": "upper left",     # 图例锚点对齐方式
     "legend_bbox": (0.02, 0.98),    # 图例的相对位置偏移 (X, Y)，调整为左上角
+    "pareto_text_x": 80,            # 👉 帕累托边界文字的基准 X 坐标 (左右移动)
+    "pareto_text_y_offset": -1.3,   # 👉 帕累托边界文字相对于曲线的 Y 轴偏移 (上下微调)
+    "pareto_text_rotation": -22,    # 👉 帕累托边界文字的倾斜角度
 }
 
 def set_publication_style():
@@ -154,9 +157,13 @@ def plot_traditional_pareto():
     ax.fill_between(px_env, 10, py_env, color='gray', alpha=PLOT_STYLE["pareto_fill_alpha"], zorder=1) # 底边填到10
     
     # 边界线学术说明
-    # 自动计算边界线上某个合适点的法线方向旋转角度，使文字完美贴合曲线走向
-    ax.text(80, pchip(80) - 1.5, "传统策略极限能力域", color='dimgray', fontsize=15, fontweight='bold', 
-            alpha=0.9, ha='center', rotation=-22, zorder=2)
+    # 使用 PLOT_STYLE 接口动态调节文字位置和角度
+    text_x = PLOT_STYLE["pareto_text_x"]
+    text_y_offset = PLOT_STYLE["pareto_text_y_offset"]
+    text_rotation = PLOT_STYLE["pareto_text_rotation"]
+    
+    ax.text(text_x, pchip(text_x) + text_y_offset, "传统策略极限能力域", color='dimgray', fontsize=15, fontweight='bold', 
+            alpha=0.9, ha='center', rotation=text_rotation, zorder=2)
 
     # 5. 右上角：理想目标区圆圈
     target_circle = Circle((98, 28), radius=3.5, edgecolor='gray', facecolor='none', linestyle='--', linewidth=2, alpha=PLOT_STYLE["target_circle_alpha"], zorder=2)
