@@ -96,17 +96,17 @@ PLOT_STYLE = {
 ENV_CONFIGS = [
     {
         "env": "merge-v0",
-        "display_name": "Merge-v0（匝道汇入）",
+        "display_name": "匝道汇入（merge-v0）",
         "models": ["M04", "M01", "M03"]
     },
     {
         "env": "racetrack-v0",
-        "display_name": "Racetrack-v0（极限赛道）",
+        "display_name": "赛道竞速（racetrack-v0）",
         "models": ["R05", "R01", "R02"]
     },
     {
         "env": "highway-v0",
-        "display_name": "Highway-v0（高速巡航）",
+        "display_name": "高速巡航（highway-v0）",
         "models": ["H02", "H01", "H03"]
     }
 ]
