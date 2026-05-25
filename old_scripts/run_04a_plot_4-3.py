@@ -33,9 +33,9 @@ def set_publication_style():
         # --- 轴与标签字号配置 ---
         "axes.titlesize": 18,             # 图表主标题的字号 (调大以增强可读性)
         "axes.labelsize": 18,             # 坐标轴标签的字号 (调大以增强可读性)
-        "xtick.labelsize": 16,            # X轴刻度标签的字号 (调大以增强可读性)
-        "ytick.labelsize": 16,            # Y轴刻度标签的字号 (调大以增强可读性)
-        "legend.fontsize": 12,            # 图例文字的字号
+        "xtick.labelsize": 18,            # X轴刻度标签的字号 (调大以增强可读性)
+        "ytick.labelsize": 18,            # Y轴刻度标签的字号 (调大以增强可读性)
+        "legend.fontsize": 16,            # 图例文字的字号
         
         # --- 线条与外框配置 ---
         "lines.linewidth": 2.0,           # 全局线宽，适用于所有 plt.plot 绘制的线条，但此脚本中平滑曲线会被单独设置
@@ -365,7 +365,8 @@ if __name__ == "__main__":
             # "DM03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM03_Standard_Q_...",
             # "DM04 强力干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM04_Strong_Q_...",
             "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_M05_Patient_Merger_20260420_220108",
-            "行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM01_Pure_BC_20260511_135709",
+            #"行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM01_Pure_BC_20260511_135709",
+            "SAC 专家": f"outputs/{TARGET_ENV}/logs/SAC_M04_Safety_First_20260420_170911",
             "Diff-SAC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DM06_Mixed_Micro_Q_20260513_175844",
         }
     elif TARGET_ENV == "racetrack-v0":
@@ -389,7 +390,8 @@ if __name__ == "__main__":
             #"DR07 混合标引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR07_Mixed_Standard_Q_20260506_152944",
             #"DR08 混合强干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916",
             "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_R05_SAC_Smooth_Racing_20260505_131614",
-            "行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
+            #"行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
+            "SAC 专家": f"outputs/{TARGET_ENV}/logs/SAC_R01_SAC_Baseline_20260505_033212",
             "Diff-SAC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112",
         }
     else: # highway-v0
@@ -397,8 +399,10 @@ if __name__ == "__main__":
             # "SAC 安全基准 (H5)": f"outputs/{TARGET_ENV}/logs/SAC_H5_20260330_135449",
             # "Diff-SAC 极微引导 (DH5)": f"outputs/{TARGET_ENV}/logs/DH5_20260406_023023",
             # "Diff-SAC 强力引导 (DH3)": f"outputs/{TARGET_ENV}/logs/DH3_20260405_101704",
-            "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_H02_Safety_Priority_SAC_20260512_040012",
-            "行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH01_Pure_BC_20260514_023858",
+            #"SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_H02_Safety_Priority_SAC_20260512_040012",
+            "SAC 基线": f"outputs/{TARGET_ENV}/logs/SAC_R01_SAC_Baseline_20260505_033212",
+            "SAC 专家": f"outputs/{TARGET_ENV}/logs/SAC_H02_Safety_Priority_SAC_20260512_040012",
+            #"行为克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH01_Pure_BC_20260514_023858",
             "Diff-SAC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237",
         }
     
@@ -445,7 +449,7 @@ if __name__ == "__main__":
     CUSTOM_AXES_LIMITS = {
         "merge-v0": {
             # 👉 接口：单独调节 [时空对齐] 全局环境交互奖励的范围。例如 xlim: (0, 100000), ylim: (10, 35)
-            "全局环境交互奖励": {"xlim": (0, 100000), "ylim": (0, 160)},  
+            "全局环境交互奖励": {"xlim": (0, 60000), "ylim": (0, 170)},  
             "回合累计奖励": {"xlim": None, "ylim": None},      
             "全局存活步数": {"xlim": None, "ylim": (0, 110)},  
             "回合步数": {"xlim": None, "ylim": (0, 110)},      

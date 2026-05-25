@@ -382,9 +382,23 @@ if __name__ == "__main__":
         }
     else: # highway-v0
         models_to_plot = {
-            "SAC 安全基准 (H5)": f"outputs/{TARGET_ENV}/logs/SAC_H5_20260330_135449",
-            # "Diff-SAC 极微引导 (DH5)": f"outputs/{TARGET_ENV}/logs/DH5_20260406_023023",
-            # "Diff-SAC 强力引导 (DH3)": f"outputs/{TARGET_ENV}/logs/DH3_20260405_101704",
+# === SAC 消融矩阵 (挑选极具代表性的策略) ===
+            "H01 基础 SAC": f"outputs/{TARGET_ENV}/logs/SAC_H01_Base_Highway_SAC_20260511_225245",
+            "H02 安全优先": f"outputs/{TARGET_ENV}/logs/SAC_H02_Safety_Priority_SAC_20260512_040012",
+            #"H03 速度优先": f"outputs/{TARGET_ENV}/logs/SAC_H03_Speed_Priority_SAC_20260512_100655",
+            #"H04 拥堵策略": f"outputs/{TARGET_ENV}/logs/SAC_H04_Traffic_Jam_SAC_20260512_154634",
+            
+            # === 第一期 diff-SAC 实验 (单专家) ===
+            "DH01 纯 BC 克隆": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH01_Pure_BC_20260514_023858",
+            #"DH02 微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH02_Micro_Q_20260514_075013",
+            #"DH03 标准引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH03_Standard_Q_20260514_130251",
+            #"DH04 强力干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH04_Strong_Q_20260514_181545",
+            
+            # === 第二期 Diff-SAC 实验 (混合专家) ===
+            #"DH05 混合纯BC": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH05_Mixed_BC_20260515_050420",
+            "DH06 混合微引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH06_Mixed_Micro_Q_20260515_100237",
+            #"DH07 混合标引导": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH07_Mixed_Standard_Q_20260515_180112",
+            #"DH08 混合强干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DH08_Mixed_Strong_Q_20260516_015209",            
         }
     
     # ==========================================
