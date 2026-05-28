@@ -1,4 +1,4 @@
-# RL Foundation - 自动驾驶强化学习与扩散模型控制框架
+# Diff-SAC - 自动驾驶强化学习与扩散模型控制框架
 
 本项目是一个面向自动驾驶连续控制任务的强化学习 (RL) 与生成式扩散模型 (Diffusion Models) 实验框架。系统涵盖了从“离线专家数据行为克隆 (Offline BC)”到“在线闭环微调 (Online RL)”的完整训练流程。
 
@@ -31,7 +31,7 @@
 项目内置了统一的评估流水线 (`run_03_evaluate.py` 与 `run_04` 系列脚本)，在测试期间关闭所有训练辅助惩罚，主要考核碰撞率与平均速度等物理指标。
 系统支持自动生成以下标准化数据图表：
 *   🌧️ **奖励核密度雨云图 (Raincloud Plots)**
-*   ️ **五维综合性能雷达图 (Radar Charts)**
+*   🕸️ **五维综合性能雷达图 (Radar Charts)**
 *   🫧 **安全-收益帕累托散点图 (Pareto Front Scatter)**
 *   📊 **变异系数与平均奖励指标柱状图 (CV & Mean Reward)**
 *   🧬 **动作分布 KDE 等高线图 (Action Manifold KDE)**
@@ -41,7 +41,7 @@
 ## 📁 系统文件结构
 
 ```text
-RL_Foundation/
+Diff-SAC/
 ├── run_00_quick_test.py            # 冒烟测试脚本 (验证系统连通性)
 ├── run_01_collect_data.py          # 专家轨迹数据采集与存盘
 ├── run_02_train_pipeline.py        # 训练调度模块 (支持多组参数顺序执行)
