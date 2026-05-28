@@ -391,9 +391,9 @@ if __name__ == "__main__":
             #"DR08 混合强干预": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR08_Mixed_Strong_Q_20260506_154916",
             #"SAC 保守基线 (R05)": f"outputs/{TARGET_ENV}/logs/SAC_R05_SAC_Smooth_Racing_20260505_131614",
             #"Diff-SAC 纯BC消融 (DR05)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
-            "Q = 0 ": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112",
-            "Q = 0.01": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
-            "Q = 1.0": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR03_Standard_Q_20260510_092222",
+            "q = 0 ": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR06_Mixed_Micro_Q_20260510_191112",
+            "q = 0.01": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR05_Mixed_BC_20260510_155536",
+            "q = 1.0": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR03_Standard_Q_20260510_092222",
             
             #"Diff-SAC 终极SOTA (DR08)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR08_Mixed_Strong_Q_20260511_015410",
             #"Diff-SAC 终极SOTA (DR01)": f"outputs/{TARGET_ENV}/logs/DiffSAC_DR01_Pure_BC_20260510_025310",

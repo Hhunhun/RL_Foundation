@@ -1,63 +1,64 @@
-# RL Foundation - 自动驾驶强化学习流水线
+# RL Foundation - 自动驾驶强化学习与扩散模型控制框架
 
-本项目是一个高度模块化、自动化的强化学习实验框架，专注于解决自动驾驶场景下的规控问题。目前已完美支持 **Highway (高速巡航)**、**Merge (匝道汇入)** 与 **Racetrack (赛道过弯)** 三大测试场景，并集成了经典的 **Soft Actor-Critic (SAC)** 算法以及前沿的 **Diffusion-RL (基于扩散模型的强化学习)** 架构。
+本项目是一个面向自动驾驶连续控制任务的强化学习 (RL) 与生成式扩散模型 (Diffusion Models) 实验框架。系统涵盖了从“离线专家数据行为克隆 (Offline BC)”到“在线闭环微调 (Online RL)”的完整训练流程。
 
-## ✨ 核心特性 (Key Features)
+目前系统支持并重构了三大自动驾驶场景：**Highway (高速巡航)**、**Merge (匝道汇入)** 与 **Racetrack (赛道竞速)**。
 
-- **三重复杂场景支持**: 动态适配 `highway-v0`, `merge-v0` 与 `racetrack-v0`，底层环境奖励、平滑约束(Jerk/Steering)以及物理边界截断高度可配置。
-- **独创的高级仿真机制 (Advanced Environment Mechanics)**:
-  - **基于路网拓扑推演的随机起点**: 杜绝模型背图过拟合，运用路网图（Graph）搜索解决弯道物理拼接盲区问题。
-  - **概率性多模态博弈课程 (Curriculum Learning)**: 独创“近距紧急避障 (50%)”与“远距高速追击 (50%)”交替生成的强制相遇机制；结合 70% 挡道与 30% 伴行的随机干扰，逼迫模型学习极限超车与平滑定力。
-  - **严谨的惩罚整形 (Penalty Shaping)**: 引入二次方横向对齐惩罚 ($lat^2$) 与低速持续掉血机制，完美破解连续控制中的“画龙振荡”与“减速苟活自杀陷阱”。
-- **SOTA 算法基座**: 
-  - **SAC (Soft Actor-Critic)**: 搭载自动化课程学习与策略固化，用于构建极速寻隙或绝对平滑的法规级专家底座。
-  - **Diff-SAC (Diffusion-SAC)**: 结合行为克隆(BC)与强化学习微调，突破传统 SAC 的均速与存活率瓶颈。
-- **外科手术式数据蒸馏**: 支持从多个 SAC 专家模型中提取特定流形的数据并进行智能混合，构建神仙级离线数据集。
-- **全自动通宵挂机流水线**: 内置参数矩阵轮询系统，可一键挂机执行数十个消融实验，并在指定时间安全关机。
-- **自动化裁判法庭**: 统一的评估与可视化模块，自动生成学术级箱线图、柱状图与量化指标 CSV，支持双盲公平测试。
-- **工业级防死锁设计**: 针对劣质模型或引擎 Bug 内置完善的超时熔断机制与显存自动回收策略。
+---
 
-## 📁 项目架构 (Project Structure)
+## ✨ 核心特性
+
+### 1. 算法架构
+- **Diff-SAC (Asymmetric Diffusion RL)**: 引入非对称掩码更新机制 (Asymmetric Masking)，Actor 仅对专家数据执行行为克隆，Critic 吸收全局经验进行价值评估，结合了扩散模型的分布拟合能力与强化学习的寻优能力。
+- **稳健的双重价值网络 (Robust Critic)**: 结合 Huber Loss、极小值截断与奖励截断 (Reward Clipping)，有效抑制连续控制任务与生成式策略中常见的 Q 值过估计与分布外 (OOD) 采样风险。
+- **挤压高斯基准 (Squashed Gaussian SAC)**: 基准模型基于最大熵理论构建，部署了自适应温度系数优化 (Alpha Tuning) 与雅可比概率密度修正 (Jacobian Correction)。
+
+### 2. 马尔可夫决策过程 (MDP) 优化
+- **时空微扰 (Dynamic Jittering)**: 在 Merge 场景中引入初始状态的时空噪声，缓解确定性环境下的轨迹过拟合问题。
+- **程序化域随机化 (Procedural Domain Randomization)**: 在 Racetrack 场景中通过路网拓扑检索，动态生成多模态的周边车辆遭遇场景，提升策略泛化性。
+- **时序截断修正 (Absorbing State Correction)**: 严格区分环境终止 (Terminated) 与超时截断 (Truncated)，修正长周期任务评估中的时间差分 (TD) 误差。
+- **平滑奖励函数 (Reward Shaping)**: 针对扩散模型初期探索不稳定的特性，简化复杂的一阶运动学惩罚，构建基于安全性与基础车速的稠密奖励体系。
+
+### 3. 系统训练提效
+- **计算图逻辑优化**: 通过拦截物理引擎底层的全网格搜寻结算逻辑，直接在张量层处理奖励信号，显著提升采样与训练速度。
+- **显存自动回收**: 内置回合生存期监测机制，针对高频碰撞导致的计算图堆积问题，主动执行垃圾回收与显存清理。
+- **环境参数动态调度**: 支持在训练过程中跨层修改 Gym Wrapper 惩罚权重，实现从探索期到稳定期的动力学参数平滑过渡。
+
+---
+
+## 📊 模型评估与可视化
+
+项目内置了统一的评估流水线 (`run_03_evaluate.py` 与 `run_04` 系列脚本)，在测试期间关闭所有训练辅助惩罚，主要考核碰撞率与平均速度等物理指标。
+系统支持自动生成以下标准化数据图表：
+*   🌧️ **奖励核密度雨云图 (Raincloud Plots)**
+*   ️ **五维综合性能雷达图 (Radar Charts)**
+*   🫧 **安全-收益帕累托散点图 (Pareto Front Scatter)**
+*   📊 **变异系数与平均奖励指标柱状图 (CV & Mean Reward)**
+*   🧬 **动作分布 KDE 等高线图 (Action Manifold KDE)**
+
+---
+
+## 📁 系统文件结构
 
 ```text
 RL_Foundation/
-├── run_00_quick_test.py            # [测试] 全链路冒烟测试脚本 (一分钟验证代码健壮性)
-├── run_01_collect_data.py          # [阶段一] 专家轨迹数据采集模块 (支持抖动增强与纯净模式)
-├── run_02_train_pipeline.py        # [阶段二/三] 核心自动化训练调度器 (含通宵扫参模式)
-├── run_03_evaluate.py              # [阶段四] 统一模型评估与可视化流水线
+├── run_00_quick_test.py            # 冒烟测试脚本 (验证系统连通性)
+├── run_01_collect_data.py          # 专家轨迹数据采集与存盘
+├── run_02_train_pipeline.py        # 训练调度模块 (支持多组参数顺序执行)
+├── run_03_evaluate.py              # 模型统一评估与结果图表生成
 │
-├── baseline_sac/                   # SAC 专家基线训练器 (分别对应三大环境)
-│   ├── main_highway.py
-│   ├── main_merge.py
-│   └── main_racetrack.py
+├── baseline_sac/                   # SAC 专家基准模型训练脚本
 │
-├── envs/                           # 环境工厂与包装器定义 (Environment Factory)
-│   ├── __init__.py                 # 动态环境路由
-│   ├── highway_wrapper.py          # 高速环境奖励塑形与状态展平
-│   ├── merge_wrapper.py            # 汇入环境奖励塑形 (包含底层源码缺陷修复补丁)
-│   └── racetrack_wrapper.py        # 赛道环境包装 (含状态扩维、拓扑推演与多模态博弈引擎)
+├── envs/                           # 物理引擎定制封装层 (MDP Wrappers)
 │
-├── algorithms/                     # 算法大脑模块
-│   ├── sac/                        # 经典 SAC 实现
-│   └── diffusion_sac/              # 结合条件扩散模型的 Diff-SAC 实现
+├── algorithms/                     # SAC 与 Diff-SAC 算法实现组件
 │
-├── runners/                        # 子训练管线执行器
-│   ├── train_offline_bc.py         # 纯离线扩散模型行为克隆 (Offline BC)
-│   └── train_online_diff.py        # 在线真实环境强化学习微调 (Online RL Finetune)
+├── runners/                        # 离线行为克隆与在线微调训练主循环
 │
-├── core/                           # 核心基础组件
-│   ├── replay_buffer.py            # 基础经验回放池
-│   └── offline_buffer.py           # 混合经验回放池 (含在线/离线双区管理与数据归一化)
+├── core/                           # 经验回放池与特征预处理模块
 │
-├── data/expert_data/               # [产出] 存放各环境采集的高质量专家数据集 (.npz)
-└── outputs/                        # [产出] 实验结果分类归档
-    ├── highway-v0/
-    │   ├── logs/                   # TensorBoard 训练日志
-    │   ├── models/                 # 网络权重文件 (.pth)
-    │   ├── eval_results/           # 评估生成的图表、CSV 数据
-    │   └── videos/                 # 评估生成的自动驾驶录像 (.mp4)
-    ├── merge-v0/                   # 同上，环境严格隔离
-    └── racetrack-v0/               # 同上，新增的极限过弯赛道环境
+├── data/expert_data/               # [产出] 离线专家数据集归档 (.npz)
+└── outputs/                        # [产出] 训练日志、权重文件与评估图表归档
 ```
 
 ## 🚀 标准工作流 (Workflow)

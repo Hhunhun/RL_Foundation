@@ -1,11 +1,30 @@
+"""
+Module: Merge Environment Wrappers (匝道汇入场景封装器)
+Description:
+    本模块构建了强化学习智能体与底层高动态匝道汇入环境 (merge-v0) 的交互桥梁。
+    相比于高速巡航，匝道汇入属于典型的高时空耦合非合作博弈 (Non-cooperative Game) 任务。
+    本模块通过引入 TTC 动态微扰与严苛的运动学/安全惩罚，强制模型学习高维度的动态博弈避让策略。
+
+Key Features:
+    - Hard Safety Constraints: 构建绝对的物理安全边界 (偏航角阈值、逆行检测)，触发即直接截断并施加极值惩罚。
+    - Anti-Trivial Heuristics: 针对智能体极易陷入的“原地急刹车等待 NPC 先行”的局部最优琐碎解 (Trivial Solution)，
+      设计了自适应的速度惩罚下界，倒逼模型在保持高效通行速度的同时完成汇入博弈。
+    - TTC Dynamic Jittering: 独创的时空微扰机制。通过接管底层初始化，注入与随机种子强绑定的微小位置/速度偏移，
+      彻底打破确定性路况下的轨迹过拟合 (Trajectory Overfitting)，显著提升泛化能力。
+"""
+
 import gymnasium as gym
 import highway_env
 import numpy as np
 
 # ----------------------------------------------------
-# 🎯 基础观测展平包装器
+# 🎯 状态空间向量化包装器 (State Space Vectorization Wrapper)
 # ----------------------------------------------------
 class MergeFlattenWrapper(gym.ObservationWrapper):
+    """
+    将环境返回的二维多智能体运动学特征矩阵 (Multi-agent Kinematics Matrix)
+    展平为一维连续张量，以严格满足多层感知机 (MLP) 的输入维数契约。
+    """
     def __init__(self, env):
         super().__init__(env)
         obs_space = self.env.observation_space
@@ -18,9 +37,14 @@ class MergeFlattenWrapper(gym.ObservationWrapper):
         return np.array(obs, dtype=np.float32).flatten()
 
 # ----------------------------------------------------
-# 🎯 SAC 专属 AV Control 包装器
+# 🎯 SAC 专属运动学控制包装器 (Kinematics Control Wrapper for SAC)
 # ----------------------------------------------------
 class MergeAVControlWrapper(gym.Wrapper):
+    """
+    基于运动学平滑性与严格物理边界的奖励整形层 (Reward Shaping Layer)。
+    专供基线 SAC 算法使用，向原生稀疏奖励中叠加一阶导数惩罚 (Jerk Penalty) 
+    与高维度的安全硬约束，以塑造平顺且安全的驾驶策略。
+    """
     def __init__(self, env, jerk_weight=1.0, steering_weight=0.5):
         super().__init__(env)
         self.last_action = np.zeros(self.env.action_space.shape)
@@ -34,29 +58,28 @@ class MergeAVControlWrapper(gym.Wrapper):
         ego = self.env.unwrapped.vehicle
         ego_speed_vx = ego.speed
         
-        # 🚫 铁腕物理裁判：防打滑、防草地、防倒车
+        # 物理安全硬约束 (Hard Safety Constraints): 严苛判定失控姿态 (如大横摆角偏航) 与非法区域边界
         is_out_of_road = info.get("is_out_of_road", False)
         is_not_on_road = not getattr(ego, "on_road", True)
         is_sideways = abs(ego.heading) > 0.4  # 高速行驶时偏航超过 0.4 弧度绝对是失控
 
         if not terminated:
-            # 1. 触发死刑条件
+            # 1. 触发终结条件 (Terminal States)
             if is_out_of_road or is_not_on_road or is_sideways or ego_speed_vx < -1.0:
                 terminated = True
-                reward -= 50.0 # 严惩死亡
-                info["crashed"] = True # 统一标记为失败
+                reward -= 50.0 # 施加越界与失控的极大值惩罚
+                info["crashed"] = True 
             else:
-                # 2. 存活期间的平滑约束
+                # 2. 存活期间的 L2 范数运动学平滑约束 (Kinematic Smoothness L2 Regularization)
                 steering_jerk = abs(action[1] - self.last_action[1])
                 steering_mag = abs(action[1])
                 reward -= (self.jerk_weight * (steering_jerk ** 2) + self.steering_weight * (steering_mag ** 2))
                 
                 # =========================================================
-                # 🚫 [核心优化：封杀消极苟活漏洞]
-                # 目的：防止主车学会“一脚刹车踩死，等NPC先走”的作弊让行策略。
-                # 机制：将龟速惩罚阈值从 10.0m/s 提高到 15.0m/s (约 54km/h)。
-                # 效果：逼迫模型学会在保持较高车速的情况下，通过“微调降速(如18m/s)”
-                #       或者“向左变道”来完成高动态的避让博弈。
+                # 🚫 [防琐碎解启发式惩罚 (Anti-Trivial Solution Heuristics)]
+                # 物理意义：在非合作博弈中，模型极易退化为“完全刹车停滞，等待周围车辆清空”的消极安全策略。
+                # 算法机制：抬高速度惩罚的容忍下界 (至 15.0m/s)，构造基于速度落差的线性惩罚面。
+                # 预期效果：迫使智能体在保持较高动能的约束下，利用横向空间 (变道) 或微小纵向加减速完成空间博弈。
                 # =========================================================
                 if ego_speed_vx < 15.0:
                     reward -= (15.0 - ego_speed_vx) * 0.5 
@@ -66,9 +89,15 @@ class MergeAVControlWrapper(gym.Wrapper):
         return next_obs, reward, terminated, truncated, info
 
 # ----------------------------------------------------
-# 🎯 Diffusion 专属宽容包装器
+# 🎯 Diffusion 专属宽容生成包装器 (Tolerant Constraint Wrapper for Diffusion)
 # ----------------------------------------------------
 class DiffMergeAVControlWrapper(gym.Wrapper):
+    """
+    专为生成式扩散模型设计的宽容环境封装层。
+    物理意义：在不削弱任何核心安全边界 (碰撞/越界即终止) 的前提下，完全移除一阶抖动惩罚。
+    旨在避免 Diffusion 模型在迭代去噪期间因非平稳的价值梯度地貌 (Non-stationary Q-landscape) 
+    而陷入过估计或梯度爆炸，将精细平滑的任务完全解耦交由离线 BC 阶段学习。
+    """
     def __init__(self, env, is_eval=False):
         super().__init__(env)
         self.is_eval = is_eval
@@ -79,22 +108,23 @@ class DiffMergeAVControlWrapper(gym.Wrapper):
         ego = self.env.unwrapped.vehicle
         ego_speed_vx = ego.speed
         
-        # 🚫 同步部署铁腕裁判
+        # 沿用绝对的安全边界物理探测 (Absolute Safety Boundaries Probe)
         crashed = getattr(ego, "crashed", False)
         is_out_of_road = info.get("is_out_of_road", False)
         is_not_on_road = not getattr(ego, "on_road", True)
         is_sideways = abs(ego.heading) > 0.4
         is_reverse = ego_speed_vx < -1.0
 
-        # 🚨 [核心修复] 物理死刑（如倒车、横摆失控）必须在任何模式下绝对生效！
-        # 防止高 Q 权重发癫的模型在评估时拿到“免死金牌”从而出现全程倒车的灵异现象。
+        # 拦截致命失控 (Fatal Control Loss Interception)
+        # 强制接管评估态 (is_eval=True) 下的终止判定，阻断极高 Q 权重引导下
+        # 扩散网络可能产生的越野/疯狂倒车等分布外 (OOD) 生成幻想。
         if crashed or is_out_of_road or is_not_on_road or is_sideways or is_reverse:
             terminated = True
             if not self.is_eval:
                 reward = -10.0
         else:
             if not self.is_eval:
-                # 原生任务中，主要依靠速度奖励和存活奖励
+                # 宽容模式下的线性驱动收益 (Tolerant Linear Driving Incentive)
                 base_reward = 1.0
                 speed_reward = min((ego_speed_vx - 15.0) / 10.0, 1.0) if ego_speed_vx >= 15.0 else -0.1
                 reward = max(min(base_reward + speed_reward, 4.0), -10.0)
@@ -103,13 +133,17 @@ class DiffMergeAVControlWrapper(gym.Wrapper):
         return next_obs, reward, terminated, truncated, info
 
 # ----------------------------------------------------
-# 🎯 核心工厂函数
+# 🎯 核心环境构造工厂 (Environment Construction Factory)
 # ----------------------------------------------------
 def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False, algo="sac", wrapper_config=None, env_config=None):
+    """
+    匝道汇入场景的标准化构建流水线。
+    包含底层缺陷修复、观测空间重塑、时空微扰注入以及依据外挂算法类型动态映射对应的约束体系。
+    """
     env = gym.make(env_name, render_mode=render_mode)
     unwrapped_env = env.unwrapped
 
-    # 🐛 [BUG FIX 保留] 修复 highway_env 连续动作空间的底层源码缺陷
+    # 🐛 [底层缺陷修补] 修复 highway_env 原生库针对 ContinuousAction 处理逻辑的隐患
     original_rewards_fn = unwrapped_env._rewards
     def patched_rewards(action):
         if isinstance(action, np.ndarray): return original_rewards_fn(1)
@@ -117,23 +151,24 @@ def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False
     unwrapped_env._rewards = patched_rewards
 
     # =========================================================
-    # 🎯 [核心优化：注入 TTC 同步传送魔法]
-    # 目的：修复默认环境中“匝道NPC过早到达汇入口”的物理错位问题。
-    # 机制：接管底层 reset() 函数，通过物理学公式(距离=速度×时间)强行重置双车位置。
+    # 🎯 [时空博弈对齐修正 (Spatiotemporal Game Alignment)]
+    # 物理意义：原生库中的初始态极易导致 NPC 车辆与主车到达汇入点的时间错位，破坏博弈条件。
+    # 通过接管底层 `reset()`，基于碰撞时间 (Time-To-Collision, TTC) 原理对偶发位置进行重构。
     # =========================================================
     original_reset = unwrapped_env.reset
     def patched_reset(*args, **kwargs):
-        # 先让底层完成原生的初始化
+        # 托管底层环境的原始内存布局分配
         obs, info = original_reset(*args, **kwargs)
         try:
             ego = unwrapped_env.vehicle
             road = unwrapped_env.road
             
             # =========================================================
-            # 🎲 [TTC 动态抖动 (Jittering)]
-            # 提取被当前环境 Seed 严格控制的底层随机数生成器。
-            # 引入位置和速度的微小偏移，彻底粉碎 1v1 纯净决斗的同质化过拟合，
-            # 同时保证同一个 Seed 下的评估考题永远一模一样。
+            # 🎲 [TTC 动态时空微扰 (Dynamic Spatiotemporal Jittering)]
+            # 算法机制：抽离并劫持受固定 Seed 管控的伪随机数生成器 (PRNG)。
+            # 在对向双车的初始纵向位置与初速度平面上注入具有确定性的高斯/均匀抖动噪声。
+            # 科研价值：彻底瓦解神经网络在固化单一场景中的轨迹过拟合 (Trajectory Overfitting)，
+            # 同时确保离线评估阶段的控制变量法 (同 Seed 同路况) 绝对成立。
             # =========================================================
             np_random = unwrapped_env.np_random
             ego_pos_jitter = np_random.uniform(-5.0, 5.0)
@@ -141,46 +176,45 @@ def create_merge_env(env_name="merge-v0", render_mode="rgb_array", is_eval=False
             npc_pos_jitter = np_random.uniform(-5.0, 5.0)
             npc_spd_jitter = np_random.uniform(-2.0, 2.0)
 
-            # [主车设定]
+            # [主车 (Ego) 初始态注入]
             ego.lane_index = ("a", "b", 1)
             lane_ego = road.network.get_lane(("a", "b", 1))
             ego.position = lane_ego.position(30 + ego_pos_jitter, 0)
             ego.speed = 25.0 + ego_spd_jitter
             
-            # [匝道 NPC 设定]
+            # [匝道他车 (NPC) 初始态注入]
             ramp_lane = road.network.get_lane(("j", "k", 0))
             ramp_vehicles = [v for v in road.vehicles if v is not ego and v.lane_index == ("j", "k", 0)]
             if ramp_vehicles:
                 npc = ramp_vehicles[0]
                 npc.position = ramp_lane.position(50 + npc_pos_jitter, 0)
                 npc.speed = 20.0 + npc_spd_jitter
-                npc.target_speed = 25.0 + npc_spd_jitter # 保持持续加速意图
+                npc.target_speed = 25.0 + npc_spd_jitter # 注入强烈汇入意图
                 
-            # [极度关键]：物理位置被我们强行篡改后，原有的 obs 张量就作废了
-            # 必须调用环境底层方法，重新发射雷达射线获取最新的状态张量
+            # 状态重组 (State Re-observation)：物理内存地址覆写后，必须强制雷达模块
+            # 重新发射探测射线，以同步更新观测张量 (Observation Tensor)。
             obs = unwrapped_env.observation_type.observe()
         except Exception as e:
-            # 容错：如果未来 highway-env 更新改了底层车道 ID ("a","b","j","k")
-            # 捕获异常并静默退回默认生成位置，防止程序直接崩溃
+            # 拓扑容错回退机制
             pass 
         return obs, info
     
-    # 用我们打好补丁的 reset 替换环境底层的 reset
+    # 挂载劫持补丁
     unwrapped_env.reset = patched_reset
     # =========================================================
 
-    # 🔧 基础配置：回归官方默认逻辑
+    # 🔧 底层物理动力学与马尔可夫奖励契约配置
     base_config = {
         "observation": {"type": "Kinematics", "vehicles_count": 5, "features": ["presence", "x", "y", "vx", "vy"], "absolute": False, "normalize": True},
         "action": {"type": "ContinuousAction"},
         "simulation_frequency": 15, "policy_frequency": 5,
         "controlled_vehicles": 1,
-        "duration": 20, # 设定为 20 秒 (即 policy_frequency=5 下的 100 步)，与外层训练的 100 步完赛标准完美对齐
+        "duration": 20, # 设定控制视界边界：20 秒 (对应 Policy 频率下的 100 决策步长)
         "offroad_terminal": True,
         "collision_reward": -10.0 if not is_eval else -1.0,
         "high_speed_reward": 5.0 if not is_eval else 1.0,
         "reward_speed_range": [20, 30], "show_trajectories": True,
-        # 显式关闭 right_lane_reward，防止自车被强行“吸”到右侧匝道去
+        # 强制关闭居右行驶奖励 (Right Lane Reward)，阻断主车倒灌匝道的病态探索行为
         "right_lane_reward": 0.0, 
     }
 

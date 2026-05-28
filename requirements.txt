@@ -3,3 +3,9 @@ highway_env==1.10.2
 matplotlib==3.10.8
 numpy==2.4.3
 torch==2.11.0
+seaborn
+tensorboard
+ptitprince
+pandas
+scipy
+adjustText
